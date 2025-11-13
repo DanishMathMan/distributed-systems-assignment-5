@@ -1,2 +1,32 @@
 ﻿syntax = "proto3";
 option go_package = "Assignment-05/grpc/proto";
+
+// BidMessage represents a bid request as made by a client, with its timestamp, id and the amount bid.
+message BidMessage{
+  int64 Timestamp = 1; //lamport timestamp
+  int64 BidderId = 2; //id of the bidder who made this bid
+  int64 Amount = 3; //amount the bidder bids
+}
+
+// Ack represents a response from a Node with a Timestamp of that Node as well as whether the operation succeeded failed or resulted in an exception
+message Ack{
+  int64 Timestamp = 1; //lamport timestamp
+  int32 Response = 2; //one of three: fail, success, exception.
+}
+
+// Outcome gives the timestamp of the process which made the message, whether the auction is over and the highest (thus) far amount bid.
+message Outcome{
+  int64 Timestamp = 1; //lamport timestamp
+  bool IsOver = 2; //true if auction is over.
+  int64 Amount = 3; //highest bid thus far, or result of auction if over
+}
+
+// Empty is used when no argument is provided
+message Empty{
+  // todo Should we have a timestamp here? int64 Timestamp = 1; It is after all a remote call
+}
+
+service Node{
+  rpc Bid(BidMessage) returns (Ack); //First "bid" registers the bidder. Must be higher than current highest bid.
+  rpc Result(Empty) returns (Outcome); //Highest bid thus far or result of auction if over.
+}
