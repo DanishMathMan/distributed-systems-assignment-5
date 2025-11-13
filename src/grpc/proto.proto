@@ -1,0 +1,2 @@
+﻿syntax = "proto3";
+option go_package = "Assignment-05/grpc/proto";
