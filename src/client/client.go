@@ -3,10 +3,10 @@
 import (
 	"bufio"
 	proto "distributed-systems-assignment-5/src/grpc"
+	"distributed-systems-assignment-5/src/utility"
 	"distributed-systems-assignment-5/src/utility/connections"
 	"errors"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"regexp"
@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-func main(){
+func main() {
 	primaryPort := flag.Int64("primary-port", 8080, "Input port for the client to associate with the primary server. Note, port is also its id")
 	backupPort := flag.Int64("backup-port", 8081, "Input port for the client to associate with a backup server. Note, port is also its id")
 	flag.Parse()
@@ -66,17 +66,45 @@ func (client *AuctionClient) InputHandler() error {
 		ResultMatch := ResultRegex.FindStringSubmatch(msg)
 
 		if BidMatch != nil {
+			//todo consider making a separate function for code below
 			//do bidding
+			// todo bid must be higher than the current highest bid
 			timestamp := client.LamportClock.LocalEvent()
-			bid := proto.BidMessage{Timestamp: timestamp, BidderId: client.ClientId, Amount: }
+			bidAmount, _ := strconv.ParseInt(BidMatch[1], 10, 64)
+			bid := &proto.BidMessage{Timestamp: timestamp, BidderId: client.ClientId, Amount: bidAmount}
+			ack, err := client.CurrentLeader.Client.Bid(nil, bid)
+			if err != nil {
+				return err //TODO is this where we will check if the server is down and then try to connect to another?
+			}
+			//todo handle ack
+			timestamp = client.LamportClock.RemoteEvent(ack.Timestamp)
+			switch ack.Response {
+			case int32(utility.EXCEPTION):
+				//Todo handle
+				break
+			case int32(utility.SUCCESS):
+				//TODO handle
+				break
+			case int32(utility.FAILURE):
+				//TODO HANDLE
+				break
+			}
 		}
 
 		if ResultMatch != nil {
+			//TODO consider making a separate function
 			//do result getting
-			timestamp := client.LamportClock.LocalEvent()
+			client.LamportClock.LocalEvent()
+			result, err := client.CurrentLeader.Client.Result(nil, nil)
+			if err != nil {
+				return err //TODO is this where we will check if the server is down and then try to connect to another?
+			}
+			//handle result
+			client.LamportClock.RemoteEvent(result.Timestamp)
+			if result.IsOver {
+				//todo Handle logic for when an auction is over
+			}
+			//TODO handle logic for when the auction is NOT over
 		}
-
-		fmt.Println("We've got a bid!")
-
 	}
 }

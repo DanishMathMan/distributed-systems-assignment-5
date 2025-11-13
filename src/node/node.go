@@ -16,6 +16,9 @@ func main() {
 	flag.Parse()
 	server := CreateAuctionNode(*port, *id)
 	server.StartServer()
+
+	//TODO after an X amount of time, the leader must inicate the auction has stopped,
+	//broadcast to all clients the highest bid
 }
 
 func (node *AuctionNode) NormalOperation() {
