@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v6.32.1
-// source: proto.proto
+// source: src/grpc/proto.proto
 
 package proto
 
@@ -19,8 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Node_Bid_FullMethodName    = "/Node/Bid"
-	Node_Result_FullMethodName = "/Node/Result"
+	Node_Bid_FullMethodName         = "/Node/Bid"
+	Node_Result_FullMethodName      = "/Node/Result"
+	Node_Election_FullMethodName    = "/Node/Election"
+	Node_Answer_FullMethodName      = "/Node/Answer"
+	Node_Coordinator_FullMethodName = "/Node/Coordinator"
+	Node_Ping_FullMethodName        = "/Node/Ping"
 )
 
 // NodeClient is the client API for Node service.
@@ -29,6 +33,10 @@ const (
 type NodeClient interface {
 	Bid(ctx context.Context, in *BidMessage, opts ...grpc.CallOption) (*Ack, error)
 	Result(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Outcome, error)
+	Election(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
+	Answer(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
+	Coordinator(ctx context.Context, in *CoordinatorMessage, opts ...grpc.CallOption) (*Empty, error)
+	Ping(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type nodeClient struct {
@@ -59,12 +67,56 @@ func (c *nodeClient) Result(ctx context.Context, in *Empty, opts ...grpc.CallOpt
 	return out, nil
 }
 
+func (c *nodeClient) Election(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Node_Election_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeClient) Answer(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Node_Answer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeClient) Coordinator(ctx context.Context, in *CoordinatorMessage, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Node_Coordinator_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeClient) Ping(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, Node_Ping_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServer is the server API for Node service.
 // All implementations must embed UnimplementedNodeServer
 // for forward compatibility.
 type NodeServer interface {
 	Bid(context.Context, *BidMessage) (*Ack, error)
 	Result(context.Context, *Empty) (*Outcome, error)
+	Election(context.Context, *Empty) (*Empty, error)
+	Answer(context.Context, *Empty) (*Empty, error)
+	Coordinator(context.Context, *CoordinatorMessage) (*Empty, error)
+	Ping(context.Context, *Empty) (*Empty, error)
 	mustEmbedUnimplementedNodeServer()
 }
 
@@ -80,6 +132,18 @@ func (UnimplementedNodeServer) Bid(context.Context, *BidMessage) (*Ack, error) {
 }
 func (UnimplementedNodeServer) Result(context.Context, *Empty) (*Outcome, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Result not implemented")
+}
+func (UnimplementedNodeServer) Election(context.Context, *Empty) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Election not implemented")
+}
+func (UnimplementedNodeServer) Answer(context.Context, *Empty) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Answer not implemented")
+}
+func (UnimplementedNodeServer) Coordinator(context.Context, *CoordinatorMessage) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Coordinator not implemented")
+}
+func (UnimplementedNodeServer) Ping(context.Context, *Empty) (*Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
 }
 func (UnimplementedNodeServer) mustEmbedUnimplementedNodeServer() {}
 func (UnimplementedNodeServer) testEmbeddedByValue()              {}
@@ -138,6 +202,78 @@ func _Node_Result_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Node_Election_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServer).Election(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Node_Election_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServer).Election(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Node_Answer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServer).Answer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Node_Answer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServer).Answer(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Node_Coordinator_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CoordinatorMessage)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServer).Coordinator(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Node_Coordinator_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServer).Coordinator(ctx, req.(*CoordinatorMessage))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Node_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServer).Ping(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Node_Ping_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServer).Ping(ctx, req.(*Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Node_ServiceDesc is the grpc.ServiceDesc for Node service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -153,7 +289,23 @@ var Node_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Result",
 			Handler:    _Node_Result_Handler,
 		},
+		{
+			MethodName: "Election",
+			Handler:    _Node_Election_Handler,
+		},
+		{
+			MethodName: "Answer",
+			Handler:    _Node_Answer_Handler,
+		},
+		{
+			MethodName: "Coordinator",
+			Handler:    _Node_Coordinator_Handler,
+		},
+		{
+			MethodName: "Ping",
+			Handler:    _Node_Ping_Handler,
+		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto.proto",
+	Metadata: "src/grpc/proto.proto",
 }

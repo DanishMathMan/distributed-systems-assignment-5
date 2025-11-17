@@ -132,7 +132,6 @@ func (client *AuctionClient) OnBidRequestResponse(BidMatch []string) error {
 }
 
 func (client *AuctionClient) OnResultRequestResponse() error {
-	//TODO consider making a separate function
 	//do result getting
 	client.LamportClock.LocalEvent()
 	result, err := client.CurrentLeader.Client.Result(nil, nil)
@@ -145,7 +144,8 @@ func (client *AuctionClient) OnResultRequestResponse() error {
 		fmt.Println("[AUCTION] IS OVER!")
 		fmt.Println(fmt.Sprintf("Winning Highest Bid: %d", result.Amount))
 	} else {
-		fmt.Println(fmt.Sprintf("[AUCTION] Current Highest Bid: %d", result.Amount))
+		fmt.Println("[AUCTION] IS STILL GOING!")
+		fmt.Println(fmt.Sprintf("Current Highest Bid: %d", result.Amount))
 	}
 	return nil
 }

@@ -26,7 +26,17 @@ message Empty{
   // todo Should we have a timestamp here? int64 Timestamp = 1; It is after all a remote call
 }
 
+message CoordinatorMessage{
+  int64 Timestamp = 1;
+  int64 NodeId = 2;
+}
+
 service Node{
   rpc Bid(BidMessage) returns (Ack); //First "bid" registers the bidder. Must be higher than current highest bid.
   rpc Result(Empty) returns (Outcome); //Highest bid thus far or result of auction if over.
+
+  rpc Election(Empty) returns (Empty);
+  rpc Answer(Empty) returns (Empty);
+  rpc Coordinator(CoordinatorMessage) returns (Empty);
+  rpc Ping(Empty) returns (Empty);
 }
