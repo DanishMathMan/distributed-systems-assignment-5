@@ -164,7 +164,7 @@ func (node *AuctionNode) Election(ctx context.Context, empty *proto.Empty) (*pro
 		}
 	}
 
-	//todo Det skal nok forstås som en timeout for alle beskederne, frem for kun 1 - Mads TA
+	//todo Det skal nok forstås som en timeout for alle beskederne, frem for kun 1 - Mads TA. Overvej andre kilder end slides.
 
 	//because go doesn't have while/for loops with conditionals we do the following for the statement: "for all (j > i)"
 	for conn_id, conn := range node.OutClients {
