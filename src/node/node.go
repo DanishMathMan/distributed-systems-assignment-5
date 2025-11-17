@@ -1,7 +1,9 @@
-﻿package node
+﻿package main
 
 import (
 	proto "distributed-systems-assignment-5/src/grpc"
+	"distributed-systems-assignment-5/src/utility"
+	"distributed-systems-assignment-5/src/utility/lamportClock"
 	"flag"
 	"net"
 	"os"
@@ -9,6 +11,27 @@ import (
 
 	"google.golang.org/grpc"
 )
+
+type AuctionNode struct {
+	proto.UnimplementedNodeServer
+	Port         int64
+	NodeId       int64
+	LamportClock lamportClock.LamportClock
+	//todo not sure how it should communicate with other serversBackupServers   map[int64]connections.ClientConnection //connections it has to backup servers
+	//todo CurrentLeader
+	//todo should it explicitly know about its clients?
+	BidQueue utility.BidQueue //queue of not-yet handled Bid rpc requests
+}
+
+func CreateAuctionNode(port int64, id int64) AuctionNode {
+	node := new(AuctionNode)
+	node.Port = port
+	node.NodeId = id
+	node.LamportClock = lamportClock.CreateLamportClock()
+	node.BidQueue = utility.BidQueue{}
+	//node.BackupServers = make(map[int64]connections.ClientConnection)
+	return *node
+}
 
 func main() {
 	port := flag.Int64("port", 8080, "Input port for the server to start on. Note, port is also its id")
