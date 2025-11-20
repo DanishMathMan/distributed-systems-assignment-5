@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -26,9 +27,10 @@ type AuctionNode struct {
 	LamportClock lamportClock.LamportClock
 	OutClients   map[int64]connections.ClientConnection //connections it has to backup servers
 	//Replies      map[int64]chan bool
-	Leader int64
-	//todo CurrentLeader
-	//todo should it explicitly know about its clients?
+	AllFailed           chan bool
+	ReceivedAnswer      chan bool
+	NewLeader           chan bool
+	Leader              int64
 	BidQueue            utility.BidQueue //queue of not-yet handled Bid rpc requests
 	HasStartedAnElected bool
 }
@@ -38,8 +40,13 @@ func CreateAuctionNode(port int64, id int64) AuctionNode {
 	node.Port = port
 	node.NodeId = id
 	node.LamportClock = lamportClock.CreateLamportClock()
+	node.OutClients = make(map[int64]connections.ClientConnection)
+	node.Leader = id
 	node.BidQueue = utility.BidQueue{}
 	node.HasStartedAnElected = false
+	node.AllFailed = make(chan bool, 1)
+	node.ReceivedAnswer = make(chan bool, 1)
+	node.NewLeader = make(chan bool, 1)
 	//node.BackupServers = make(map[int64]connections.ClientConnection)
 	return *node
 }
@@ -50,7 +57,7 @@ func main() {
 	server := CreateAuctionNode(*port, *port)
 	server.StartServer()
 
-	//TODO after an X amount of time, the leader must inicate the auction has stopped,
+	//TODO after an X amount of time, the leader must indicate the auction has stopped,
 	//broadcast to all clients the highest bid
 }
 
@@ -128,8 +135,7 @@ func (node *AuctionNode) ConnectToNodeServer(port int64) error {
 	if err != nil {
 		return err
 	}
-	answerChannel := make(chan bool, 1)
-	connection := connections.ClientConnection{Client: client, IsDown: false, Answer: answerChannel}
+	connection := connections.ClientConnection{Client: client, IsDown: false}
 	node.OutClients[port] = connection
 	//node.Replies[port] = make(chan bool, 1)
 
@@ -161,18 +167,19 @@ func (node *AuctionNode) CallElection() {
 	//the value of IsHighest will now reflect whether it is highest or not
 	if IsHighest {
 		for _, c := range node.OutClients {
-			//TODO TIMEOUT
-			_, err := c.Client.Coordinator(nil, &proto.CoordinatorMessage{NodeId: node.NodeId})
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_, err := c.Client.Coordinator(ctx, &proto.CoordinatorMessage{NodeId: node.NodeId})
 			if err != nil {
 				//TODO HANDLE CORRECTLY
 				c.IsDown = true
 			}
-
 		}
 		node.Leader = node.NodeId
 	} else {
 		higherNodesCount := 0 //count the number of nodes that are higher than it which it knows about
 		failedNodesCount := 0 //count the number of those nodes that fail to respond
+		wg := sync.WaitGroup{}
 		for v, c := range node.OutClients {
 			//only broadcast to every node which is higher than itself
 			if v < node.NodeId {
@@ -181,10 +188,10 @@ func (node *AuctionNode) CallElection() {
 			higherNodesCount++
 			timestamp := node.LamportClock.LocalEvent()
 			electionMsg := proto.ElectionMessage{Timestamp: timestamp, NodeId: node.NodeId}
-			wg := sync.WaitGroup{}
 			wg.Go(func() {
-				//TODO TIMEOUT
-				_, err := c.Client.Election(nil, &electionMsg)
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				_, err := c.Client.Election(ctx, &electionMsg)
 				if err != nil {
 					//TODO HANDLE CORRECTLY
 					c.IsDown = true
@@ -194,27 +201,33 @@ func (node *AuctionNode) CallElection() {
 			// The node received an answer, therefore it must wait for receiving a Coordinator rpc call or timeout, whichever comes first
 			//TODO HANDLE RECEIVING AN ANSWER PER STEP 3 AND 4
 			//TODO WAIT FOR A VICTORY CALL OR TIMEOUT
-
-			//map over clients, hver client har et ID og en channel
-			//indhent og afvent alle channels fra de højere id's
-			//Hvis en af channels bliver populated stop alle andre channel listeners samt funktionen.
-
 		}
-		//check if all the nodes that are higher than it failed. If they did this is now the leader
-		if higherNodesCount == failedNodesCount {
-			//no other node that is higher than this node are active and thus this node becomes the leader
+		wg.Wait()
+		if failedNodesCount == higherNodesCount {
+			node.AllFailed <- true
+		}
+		select {
+		case <-node.ReceivedAnswer:
+			select {
+			case <-node.NewLeader:
+				//A leader has been determined and therefore we can return
+				break
+			case <-time.After(5 * time.Second):
+				//timeout reached, create new election
+				defer node.CallElection()
+				break
+			}
+			break
+		case <-node.AllFailed:
 			for _, c := range node.OutClients {
-				//TODO TIMEOUT
-				_, err := c.Client.Coordinator(nil, &proto.CoordinatorMessage{NodeId: node.NodeId})
+				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				defer cancel()
+				_, err := c.Client.Coordinator(ctx, &proto.CoordinatorMessage{NodeId: node.NodeId})
 				if err != nil {
 					//TODO HANDLE CORRECTLY
 				}
 			}
-		} else {
-			// The node received an answer, therefore it must wait for receiving a Coordinator rpc call or timeout, whichever comes first
-			//TODO HANDLE RECEIVING AN ANSWER PER STEP 3 AND 4
-			//TODO WAIT FOR A VICTORY CALL OR TIMEOUT
-
+			break
 		}
 	}
 
@@ -245,6 +258,7 @@ func (node *AuctionNode) Election(ctx context.Context, electionMsg *proto.Electi
 func (node *AuctionNode) Coordinator(ctx context.Context, msg *proto.CoordinatorMessage) (*proto.Empty, error) {
 	//receiving a Coordinator call, means that the "bully"/leader has been decided and is the one who made the call
 	node.Leader = msg.NodeId
+	node.NewLeader <- true
 	return nil, nil
 }
 
@@ -255,7 +269,7 @@ func (node *AuctionNode) Answer(ctx context.Context, answer *proto.AnswerMessage
 	}
 
 	//populate channel indicating an answer for use in the CallElection method
-	node.OutClients[answer.NodeId].Answer <- true
+	node.ReceivedAnswer <- true
 	return &proto.Empty{}, nil
 }
 
