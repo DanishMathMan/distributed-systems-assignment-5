@@ -13,7 +13,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
-	"time"
+	"sync"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -29,7 +29,8 @@ type AuctionNode struct {
 	Leader int64
 	//todo CurrentLeader
 	//todo should it explicitly know about its clients?
-	BidQueue utility.BidQueue //queue of not-yet handled Bid rpc requests
+	BidQueue            utility.BidQueue //queue of not-yet handled Bid rpc requests
+	HasStartedAnElected bool
 }
 
 func CreateAuctionNode(port int64, id int64) AuctionNode {
@@ -38,15 +39,15 @@ func CreateAuctionNode(port int64, id int64) AuctionNode {
 	node.NodeId = id
 	node.LamportClock = lamportClock.CreateLamportClock()
 	node.BidQueue = utility.BidQueue{}
+	node.HasStartedAnElected = false
 	//node.BackupServers = make(map[int64]connections.ClientConnection)
 	return *node
 }
 
 func main() {
 	port := flag.Int64("port", 8080, "Input port for the server to start on. Note, port is also its id")
-	id := flag.Int64("id", 0, "Auction node id")
 	flag.Parse()
-	server := CreateAuctionNode(*port, *id)
+	server := CreateAuctionNode(*port, *port)
 	server.StartServer()
 
 	//TODO after an X amount of time, the leader must inicate the auction has stopped,
@@ -127,7 +128,9 @@ func (node *AuctionNode) ConnectToNodeServer(port int64) error {
 	if err != nil {
 		return err
 	}
-	node.OutClients[port] = connections.ClientConnection{Client: client, IsDown: false}
+	answerChannel := make(chan bool, 1)
+	connection := connections.ClientConnection{Client: client, IsDown: false, Answer: answerChannel}
+	node.OutClients[port] = connection
 	//node.Replies[port] = make(chan bool, 1)
 
 	return nil
@@ -135,56 +138,106 @@ func (node *AuctionNode) ConnectToNodeServer(port int64) error {
 
 // TODO BULLY
 
-// Election is the logic the server must run when it receives an Election rpc call from another server.
-func (node *AuctionNode) Election(ctx context.Context, empty *proto.Empty) (*proto.Empty, error) {
+// CallElection uses the bully algorihtm to determine a leader.
+// Based on the algorithm as described on https://en.wikipedia.org/wiki/Bully_algorithm last accessed 20/11/2025 TODO update date if necessary
+func (node *AuctionNode) CallElection() {
 	/*
-	   On pi receive ‘election’ do
-	      	if i == max process id // i am the bully
-	      		send ‘coordinator(i)
-	   	end if
-
-	      for all (j > i)
-	      	send ‘election to pj’, timeout c
-	      	on timeout: // all bullies are dead 😱
-	      			for all ( j <i)
-	      				send ‘coordinator(i)
-	      			end for
-	      		end on
-	      	end for
-
-	      end on
+		    1. If P has the highest process ID, it sends a Victory message to all other processes and becomes the new Coordinator. Otherwise, P broadcasts an Election message to all other processes with higher process IDs than itself.
+			2. If P receives no Answer after sending an Election message, then it broadcasts a Victory message to all other processes and becomes the Coordinator.
+			3. If P receives an Answer from a process with a higher ID, it sends no further messages for this election and waits for a Victory message. (If there is no Victory message after a period of time, it restarts the process at the beginning.)
+			4. If P receives an Election message from another process with a lower ID it sends an Answer message back and if it has not already started an election, it starts the election process at the beginning, by sending an Election message to higher-numbered processes.
+			5. If P receives a Coordinator message, it treats the sender as the coordinator.
 	*/
 
-	if node.Leader == node.NodeId {
-		for _, conn := range node.OutClients {
-			_, err := conn.Client.Coordinator(nil, &proto.CoordinatorMessage{NodeId: node.NodeId})
-			if err != nil {
-				//TODO handle rpc error. This probably means that the other server is down
-			}
+	node.HasStartedAnElected = true
+	IsHighest := true
+	for conn_id, _ := range node.OutClients {
+		if conn_id > node.NodeId {
+			//it is not the highest
+			IsHighest = false
+			break
 		}
 	}
+	//the value of IsHighest will now reflect whether it is highest or not
+	if IsHighest {
+		for _, c := range node.OutClients {
+			//TODO TIMEOUT
+			_, err := c.Client.Coordinator(nil, &proto.CoordinatorMessage{NodeId: node.NodeId})
+			if err != nil {
+				//TODO HANDLE CORRECTLY
+				c.IsDown = true
+			}
 
-	//todo Det skal nok forstås som en timeout for alle beskederne, frem for kun 1 - Mads TA. Overvej andre kilder end slides.
-
-	//because go doesn't have while/for loops with conditionals we do the following for the statement: "for all (j > i)"
-	for conn_id, conn := range node.OutClients {
-		//skip all nodes that can't be its bully
-		if conn_id <= node.NodeId {
-			continue
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(time.Second*2))
-		defer cancel()
-		_, err := conn.Client.Election(ctx, nil)
-		if err != nil {
-			//WithTimeout error can be checked with status.Code(err) == codes.DeadlineExceeded
-			//todo consider removing connection from pool
-			for conn_id2, conn2 := range node.OutClients {
-				if conn_id2 < node.NodeId {
-					conn2.Client.Coordinator(nil, &proto.CoordinatorMessage{NodeId: node.NodeId})
+		node.Leader = node.NodeId
+	} else {
+		higherNodesCount := 0 //count the number of nodes that are higher than it which it knows about
+		failedNodesCount := 0 //count the number of those nodes that fail to respond
+		for v, c := range node.OutClients {
+			//only broadcast to every node which is higher than itself
+			if v < node.NodeId {
+				continue
+			}
+			higherNodesCount++
+			timestamp := node.LamportClock.LocalEvent()
+			electionMsg := proto.ElectionMessage{Timestamp: timestamp, NodeId: node.NodeId}
+			wg := sync.WaitGroup{}
+			wg.Go(func() {
+				//TODO TIMEOUT
+				_, err := c.Client.Election(nil, &electionMsg)
+				if err != nil {
+					//TODO HANDLE CORRECTLY
+					c.IsDown = true
+					failedNodesCount++
+				}
+			})
+			// The node received an answer, therefore it must wait for receiving a Coordinator rpc call or timeout, whichever comes first
+			//TODO HANDLE RECEIVING AN ANSWER PER STEP 3 AND 4
+			//TODO WAIT FOR A VICTORY CALL OR TIMEOUT
+
+			//map over clients, hver client har et ID og en channel
+			//indhent og afvent alle channels fra de højere id's
+			//Hvis en af channels bliver populated stop alle andre channel listeners samt funktionen.
+
+		}
+		//check if all the nodes that are higher than it failed. If they did this is now the leader
+		if higherNodesCount == failedNodesCount {
+			//no other node that is higher than this node are active and thus this node becomes the leader
+			for _, c := range node.OutClients {
+				//TODO TIMEOUT
+				_, err := c.Client.Coordinator(nil, &proto.CoordinatorMessage{NodeId: node.NodeId})
+				if err != nil {
+					//TODO HANDLE CORRECTLY
 				}
 			}
+		} else {
+			// The node received an answer, therefore it must wait for receiving a Coordinator rpc call or timeout, whichever comes first
+			//TODO HANDLE RECEIVING AN ANSWER PER STEP 3 AND 4
+			//TODO WAIT FOR A VICTORY CALL OR TIMEOUT
+
 		}
 	}
+
+	defer func() {
+		node.HasStartedAnElected = false
+	}()
+}
+
+// Election is the logic the server must run when it receives an Election rpc call from another server.
+func (node *AuctionNode) Election(ctx context.Context, electionMsg *proto.ElectionMessage) (*proto.Empty, error) {
+
+	timestamp := node.LamportClock.RemoteEvent(electionMsg.Timestamp)
+	if node.NodeId <= electionMsg.NodeId {
+		//TODO THROW AN ERROR
+	}
+	_, err := node.OutClients[electionMsg.GetNodeId()].Client.Answer(nil, &proto.AnswerMessage{NodeId: node.NodeId, Timestamp: timestamp})
+	if err != nil {
+		//TODO HANDLE
+	}
+	if node.HasStartedAnElected == false {
+		node.CallElection()
+	}
+
 	return nil, nil
 }
 
@@ -196,7 +249,13 @@ func (node *AuctionNode) Coordinator(ctx context.Context, msg *proto.Coordinator
 }
 
 // Answer is the logic the server must run when it receives an Answer rpc call from another server.
-func (node *AuctionNode) Answer(ctx context.Context, empty *proto.Empty) (*proto.Empty, error) {
+func (node *AuctionNode) Answer(ctx context.Context, answer *proto.AnswerMessage) (*proto.Empty, error) {
+	if answer.NodeId <= node.NodeId {
+		//TODO THROW AN ERROR
+	}
+
+	//populate channel indicating an answer for use in the CallElection method
+	node.OutClients[answer.NodeId].Answer <- true
 	return &proto.Empty{}, nil
 }
 

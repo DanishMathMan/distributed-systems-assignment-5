@@ -6,7 +6,9 @@ type LamportClock struct {
 
 //goland:noinspection GoExportedFuncWithUnexportedType
 func CreateLamportClock() LamportClock {
-	return LamportClock{make(chan int64, 1)}
+	clock := LamportClock{make(chan int64, 1)}
+	clock.t <- 0
+	return clock
 }
 
 // LocalEvent updates the Timestamp by incrementing it by 1
@@ -23,6 +25,9 @@ func (l *LamportClock) RemoteEvent(otherTimestamp int64) int64 {
 	return newTimestamp
 }
 
+// GetCurrentTimestamp returns the current lamport timestamp without incrementing.
+// This method is needed as the timestamp can be incremented or gotten from multiple different goroutines, thus this
+// prevents method race conditions.
 func (l *LamportClock) GetCurrentTimestamp() int64 {
 	t := <-l.t
 	l.t <- t

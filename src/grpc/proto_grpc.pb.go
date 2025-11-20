@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v6.32.1
-// source: src/grpc/proto.proto
+// source: proto.proto
 
 package proto
 
@@ -33,8 +33,8 @@ const (
 type NodeClient interface {
 	Bid(ctx context.Context, in *BidMessage, opts ...grpc.CallOption) (*Ack, error)
 	Result(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Outcome, error)
-	Election(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
-	Answer(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
+	Election(ctx context.Context, in *ElectionMessage, opts ...grpc.CallOption) (*Empty, error)
+	Answer(ctx context.Context, in *AnswerMessage, opts ...grpc.CallOption) (*Empty, error)
 	Coordinator(ctx context.Context, in *CoordinatorMessage, opts ...grpc.CallOption) (*Empty, error)
 	Ping(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
 }
@@ -67,7 +67,7 @@ func (c *nodeClient) Result(ctx context.Context, in *Empty, opts ...grpc.CallOpt
 	return out, nil
 }
 
-func (c *nodeClient) Election(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+func (c *nodeClient) Election(ctx context.Context, in *ElectionMessage, opts ...grpc.CallOption) (*Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, Node_Election_FullMethodName, in, out, cOpts...)
@@ -77,7 +77,7 @@ func (c *nodeClient) Election(ctx context.Context, in *Empty, opts ...grpc.CallO
 	return out, nil
 }
 
-func (c *nodeClient) Answer(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error) {
+func (c *nodeClient) Answer(ctx context.Context, in *AnswerMessage, opts ...grpc.CallOption) (*Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, Node_Answer_FullMethodName, in, out, cOpts...)
@@ -113,8 +113,8 @@ func (c *nodeClient) Ping(ctx context.Context, in *Empty, opts ...grpc.CallOptio
 type NodeServer interface {
 	Bid(context.Context, *BidMessage) (*Ack, error)
 	Result(context.Context, *Empty) (*Outcome, error)
-	Election(context.Context, *Empty) (*Empty, error)
-	Answer(context.Context, *Empty) (*Empty, error)
+	Election(context.Context, *ElectionMessage) (*Empty, error)
+	Answer(context.Context, *AnswerMessage) (*Empty, error)
 	Coordinator(context.Context, *CoordinatorMessage) (*Empty, error)
 	Ping(context.Context, *Empty) (*Empty, error)
 	mustEmbedUnimplementedNodeServer()
@@ -133,10 +133,10 @@ func (UnimplementedNodeServer) Bid(context.Context, *BidMessage) (*Ack, error) {
 func (UnimplementedNodeServer) Result(context.Context, *Empty) (*Outcome, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Result not implemented")
 }
-func (UnimplementedNodeServer) Election(context.Context, *Empty) (*Empty, error) {
+func (UnimplementedNodeServer) Election(context.Context, *ElectionMessage) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Election not implemented")
 }
-func (UnimplementedNodeServer) Answer(context.Context, *Empty) (*Empty, error) {
+func (UnimplementedNodeServer) Answer(context.Context, *AnswerMessage) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Answer not implemented")
 }
 func (UnimplementedNodeServer) Coordinator(context.Context, *CoordinatorMessage) (*Empty, error) {
@@ -203,7 +203,7 @@ func _Node_Result_Handler(srv interface{}, ctx context.Context, dec func(interfa
 }
 
 func _Node_Election_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Empty)
+	in := new(ElectionMessage)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -215,13 +215,13 @@ func _Node_Election_Handler(srv interface{}, ctx context.Context, dec func(inter
 		FullMethod: Node_Election_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeServer).Election(ctx, req.(*Empty))
+		return srv.(NodeServer).Election(ctx, req.(*ElectionMessage))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _Node_Answer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Empty)
+	in := new(AnswerMessage)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -233,7 +233,7 @@ func _Node_Answer_Handler(srv interface{}, ctx context.Context, dec func(interfa
 		FullMethod: Node_Answer_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeServer).Answer(ctx, req.(*Empty))
+		return srv.(NodeServer).Answer(ctx, req.(*AnswerMessage))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -307,5 +307,5 @@ var Node_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "src/grpc/proto.proto",
+	Metadata: "proto.proto",
 }

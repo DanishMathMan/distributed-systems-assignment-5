@@ -31,12 +31,23 @@ message CoordinatorMessage{
   int64 NodeId = 2;
 }
 
+message ElectionMessage{
+  int64 Timestamp = 1;
+  int64 NodeId = 2;
+}
+
+// AnswerMessage is used for giving information about the process that gave the answer
+message AnswerMessage{
+  int64 Timestamp = 1;
+  int64 NodeId = 2;
+}
+
 service Node{
   rpc Bid(BidMessage) returns (Ack); //First "bid" registers the bidder. Must be higher than current highest bid.
   rpc Result(Empty) returns (Outcome); //Highest bid thus far or result of auction if over.
 
-  rpc Election(Empty) returns (Empty);
-  rpc Answer(Empty) returns (Empty);
+  rpc Election(ElectionMessage) returns (Empty);
+  rpc Answer(AnswerMessage) returns (Empty);
   rpc Coordinator(CoordinatorMessage) returns (Empty);
   rpc Ping(Empty) returns (Empty);
 }

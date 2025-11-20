@@ -66,7 +66,7 @@ func main() {
 }
 
 func (client *AuctionClient) ConnectClientToNode(port int64) {
-	connection, err := grpc.NewClient("localhost"+strconv.FormatInt(port, 10), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	connection, err := grpc.NewClient("localhost:"+strconv.FormatInt(port, 10), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatal(err)
 	}
