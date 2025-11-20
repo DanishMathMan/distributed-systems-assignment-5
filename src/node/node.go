@@ -30,9 +30,13 @@ type AuctionNode struct {
 	AllFailed           chan bool
 	ReceivedAnswer      chan bool
 	NewLeader           chan bool
+	StartFlag           chan bool
 	Leader              int64
 	BidQueue            utility.BidQueue //queue of not-yet handled Bid rpc requests
+	Bids                map[int64]*proto.BidMessage
+	BestBid             *proto.BidMessage
 	HasStartedAnElected bool
+	AuctionIsOver       bool
 }
 
 func CreateAuctionNode(port int64, id int64) AuctionNode {
@@ -43,10 +47,14 @@ func CreateAuctionNode(port int64, id int64) AuctionNode {
 	node.OutClients = make(map[int64]connections.ClientConnection)
 	node.Leader = id
 	node.BidQueue = utility.BidQueue{}
+	node.BestBid = &proto.BidMessage{Timestamp: 0, BidderId: -1, Amount: 0}
+	node.Bids = make(map[int64]*proto.BidMessage)
 	node.HasStartedAnElected = false
 	node.AllFailed = make(chan bool, 1)
 	node.ReceivedAnswer = make(chan bool, 1)
 	node.NewLeader = make(chan bool, 1)
+	node.StartFlag = make(chan bool)
+	node.AuctionIsOver = false
 	//node.BackupServers = make(map[int64]connections.ClientConnection)
 	return *node
 }
@@ -56,6 +64,41 @@ func main() {
 	flag.Parse()
 	server := CreateAuctionNode(*port, *port)
 	server.StartServer()
+
+	go func() {
+		err := server.InputHandler()
+		if err != nil {
+			//TODO HANDLE
+		}
+	}()
+
+	//wait for starter flag to have been called
+	<-server.StartFlag
+
+	//continuously make sure the node has a connection to the leader
+	go func() {
+		for {
+			//We are already leader, no need to ping
+			if server.Leader == server.NodeId {
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			time.Sleep(1 * time.Second)
+
+			//Ping the current leader
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			_, err := server.OutClients[server.Leader].Client.Ping(ctx, nil)
+			if err != nil {
+				//The server did not respond!!! bad!
+				server.CallElection()
+			}
+		}
+
+	}()
+
+	//TODO Handle auction with normal operations
 
 	//TODO after an X amount of time, the leader must indicate the auction has stopped,
 	//broadcast to all clients the highest bid
@@ -69,6 +112,10 @@ func (node *AuctionNode) NormalOperation() {
 	//node.Execution()
 	//node.Agreement()
 	//node.Response()
+}
+
+func (node *AuctionNode) Request() {
+
 }
 
 func (node *AuctionNode) StartServer() {
@@ -102,14 +149,11 @@ func (node *AuctionNode) InputHandler() error {
 			continue
 		}
 
-		//todo starter flag to start the servers
 		//Starter flag
-		/*
-			if match2 != nil {
-				node.Start <- true
-				continue
-			}
-		*/
+		if match2 != nil {
+			node.StartFlag <- true
+			continue
+		}
 
 		port, _ := strconv.ParseInt(match[1], 10, 64)
 		err = node.ConnectToNodeServer(port)
@@ -144,7 +188,7 @@ func (node *AuctionNode) ConnectToNodeServer(port int64) error {
 
 // TODO BULLY
 
-// CallElection uses the bully algorihtm to determine a leader.
+// CallElection uses the bully algorithm to determine a leader.
 // Based on the algorithm as described on https://en.wikipedia.org/wiki/Bully_algorithm last accessed 20/11/2025 TODO update date if necessary
 func (node *AuctionNode) CallElection() {
 	/*
@@ -276,4 +320,16 @@ func (node *AuctionNode) Answer(ctx context.Context, answer *proto.AnswerMessage
 // Ping is the logic the server must run when it receives a Ping rpc call from another server.
 func (node *AuctionNode) Ping(ctx context.Context, empty *proto.Empty) (*proto.Empty, error) {
 	return &proto.Empty{}, nil
+}
+
+// Bid is the logic the server must run when it receives a Bid rpc call from a client or server in the case it is the leader server
+func (node *AuctionNode) Bid(ctx context.Context, bid *proto.BidMessage) (*proto.Ack, error) {
+	if node.Leader != node.NodeId {
+		//TODO THROW ERROR
+	}
+}
+
+func (node *AuctionNode) Result(ctx context.Context, msg *proto.TimestampMessage) (*proto.Outcome, error) {
+	timestamp := node.LamportClock.RemoteEvent(msg.GetTimestamp())
+	return &proto.Outcome{Timestamp: timestamp, IsOver: node.AuctionIsOver, Amount: node.BestBid.Amount}, nil
 }

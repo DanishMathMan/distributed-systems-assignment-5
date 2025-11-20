@@ -32,7 +32,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type NodeClient interface {
 	Bid(ctx context.Context, in *BidMessage, opts ...grpc.CallOption) (*Ack, error)
-	Result(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Outcome, error)
+	Result(ctx context.Context, in *TimestampMessage, opts ...grpc.CallOption) (*Outcome, error)
 	Election(ctx context.Context, in *ElectionMessage, opts ...grpc.CallOption) (*Empty, error)
 	Answer(ctx context.Context, in *AnswerMessage, opts ...grpc.CallOption) (*Empty, error)
 	Coordinator(ctx context.Context, in *CoordinatorMessage, opts ...grpc.CallOption) (*Empty, error)
@@ -57,7 +57,7 @@ func (c *nodeClient) Bid(ctx context.Context, in *BidMessage, opts ...grpc.CallO
 	return out, nil
 }
 
-func (c *nodeClient) Result(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Outcome, error) {
+func (c *nodeClient) Result(ctx context.Context, in *TimestampMessage, opts ...grpc.CallOption) (*Outcome, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Outcome)
 	err := c.cc.Invoke(ctx, Node_Result_FullMethodName, in, out, cOpts...)
@@ -112,7 +112,7 @@ func (c *nodeClient) Ping(ctx context.Context, in *Empty, opts ...grpc.CallOptio
 // for forward compatibility.
 type NodeServer interface {
 	Bid(context.Context, *BidMessage) (*Ack, error)
-	Result(context.Context, *Empty) (*Outcome, error)
+	Result(context.Context, *TimestampMessage) (*Outcome, error)
 	Election(context.Context, *ElectionMessage) (*Empty, error)
 	Answer(context.Context, *AnswerMessage) (*Empty, error)
 	Coordinator(context.Context, *CoordinatorMessage) (*Empty, error)
@@ -130,7 +130,7 @@ type UnimplementedNodeServer struct{}
 func (UnimplementedNodeServer) Bid(context.Context, *BidMessage) (*Ack, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Bid not implemented")
 }
-func (UnimplementedNodeServer) Result(context.Context, *Empty) (*Outcome, error) {
+func (UnimplementedNodeServer) Result(context.Context, *TimestampMessage) (*Outcome, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Result not implemented")
 }
 func (UnimplementedNodeServer) Election(context.Context, *ElectionMessage) (*Empty, error) {
@@ -185,7 +185,7 @@ func _Node_Bid_Handler(srv interface{}, ctx context.Context, dec func(interface{
 }
 
 func _Node_Result_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(Empty)
+	in := new(TimestampMessage)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -197,7 +197,7 @@ func _Node_Result_Handler(srv interface{}, ctx context.Context, dec func(interfa
 		FullMethod: Node_Result_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeServer).Result(ctx, req.(*Empty))
+		return srv.(NodeServer).Result(ctx, req.(*TimestampMessage))
 	}
 	return interceptor(ctx, in, info, handler)
 }

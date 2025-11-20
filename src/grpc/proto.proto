@@ -42,9 +42,14 @@ message AnswerMessage{
   int64 NodeId = 2;
 }
 
+//
+message TimestampMessage{
+  int64 Timestamp = 1;
+}
+
 service Node{
   rpc Bid(BidMessage) returns (Ack); //First "bid" registers the bidder. Must be higher than current highest bid.
-  rpc Result(Empty) returns (Outcome); //Highest bid thus far or result of auction if over.
+  rpc Result(TimestampMessage) returns (Outcome); //Highest bid thus far or result of auction if over.
 
   rpc Election(ElectionMessage) returns (Empty);
   rpc Answer(AnswerMessage) returns (Empty);

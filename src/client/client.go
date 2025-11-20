@@ -105,6 +105,8 @@ func (client *AuctionClient) InputHandler() error {
 	}
 }
 
+//TODO (!==!) HANDLE LEADER UPDATE (!==!)
+
 func (client *AuctionClient) OnBidRequestResponse(BidMatch []string) error {
 	//do bidding
 	// todo bid must be higher than the current highest bid

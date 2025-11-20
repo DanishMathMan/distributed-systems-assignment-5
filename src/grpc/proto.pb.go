@@ -390,6 +390,50 @@ func (x *AnswerMessage) GetNodeId() int64 {
 	return 0
 }
 
+type TimestampMessage struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Timestamp     int64                  `protobuf:"varint,1,opt,name=Timestamp,proto3" json:"Timestamp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TimestampMessage) Reset() {
+	*x = TimestampMessage{}
+	mi := &file_proto_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TimestampMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TimestampMessage) ProtoMessage() {}
+
+func (x *TimestampMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TimestampMessage.ProtoReflect.Descriptor instead.
+func (*TimestampMessage) Descriptor() ([]byte, []int) {
+	return file_proto_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *TimestampMessage) GetTimestamp() int64 {
+	if x != nil {
+		return x.Timestamp
+	}
+	return 0
+}
+
 var File_proto_proto protoreflect.FileDescriptor
 
 const file_proto_proto_rawDesc = "" +
@@ -416,10 +460,12 @@ const file_proto_proto_rawDesc = "" +
 	"\x06NodeId\x18\x02 \x01(\x03R\x06NodeId\"E\n" +
 	"\rAnswerMessage\x12\x1c\n" +
 	"\tTimestamp\x18\x01 \x01(\x03R\tTimestamp\x12\x16\n" +
-	"\x06NodeId\x18\x02 \x01(\x03R\x06NodeId2\xc8\x01\n" +
+	"\x06NodeId\x18\x02 \x01(\x03R\x06NodeId\"0\n" +
+	"\x10TimestampMessage\x12\x1c\n" +
+	"\tTimestamp\x18\x01 \x01(\x03R\tTimestamp2\xd3\x01\n" +
 	"\x04Node\x12\x18\n" +
-	"\x03Bid\x12\v.BidMessage\x1a\x04.Ack\x12\x1a\n" +
-	"\x06Result\x12\x06.Empty\x1a\b.Outcome\x12$\n" +
+	"\x03Bid\x12\v.BidMessage\x1a\x04.Ack\x12%\n" +
+	"\x06Result\x12\x11.TimestampMessage\x1a\b.Outcome\x12$\n" +
 	"\bElection\x12\x10.ElectionMessage\x1a\x06.Empty\x12 \n" +
 	"\x06Answer\x12\x0e.AnswerMessage\x1a\x06.Empty\x12*\n" +
 	"\vCoordinator\x12\x13.CoordinatorMessage\x1a\x06.Empty\x12\x16\n" +
@@ -437,7 +483,7 @@ func file_proto_proto_rawDescGZIP() []byte {
 	return file_proto_proto_rawDescData
 }
 
-var file_proto_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_proto_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_proto_proto_goTypes = []any{
 	(*BidMessage)(nil),         // 0: BidMessage
 	(*Ack)(nil),                // 1: Ack
@@ -446,10 +492,11 @@ var file_proto_proto_goTypes = []any{
 	(*CoordinatorMessage)(nil), // 4: CoordinatorMessage
 	(*ElectionMessage)(nil),    // 5: ElectionMessage
 	(*AnswerMessage)(nil),      // 6: AnswerMessage
+	(*TimestampMessage)(nil),   // 7: TimestampMessage
 }
 var file_proto_proto_depIdxs = []int32{
 	0, // 0: Node.Bid:input_type -> BidMessage
-	3, // 1: Node.Result:input_type -> Empty
+	7, // 1: Node.Result:input_type -> TimestampMessage
 	5, // 2: Node.Election:input_type -> ElectionMessage
 	6, // 3: Node.Answer:input_type -> AnswerMessage
 	4, // 4: Node.Coordinator:input_type -> CoordinatorMessage
@@ -478,7 +525,7 @@ func file_proto_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_proto_rawDesc), len(file_proto_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
