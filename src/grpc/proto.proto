@@ -6,12 +6,14 @@ message BidMessage{
   int64 Timestamp = 1; //lamport timestamp
   int64 BidderId = 2; //id of the bidder who made this bid
   int64 Amount = 3; //amount the bidder bids
+  bool WasForwarded = 4; //only the primary server will set this field to true, all others set it to false
 }
 
 // Ack represents a response from a Node with a Timestamp of that Node as well as whether the operation succeeded failed or resulted in an exception
 message Ack{
   int64 Timestamp = 1; //lamport timestamp
   int32 Response = 2; //one of three: fail, success, exception.
+  int64 CurrentLeaderPort = 3; //The server will notify the client of whom the current leader is.
 }
 
 // Outcome gives the timestamp of the process which made the message, whether the auction is over and the highest (thus) far amount bid.
@@ -19,6 +21,7 @@ message Outcome{
   int64 Timestamp = 1; //lamport timestamp
   bool IsOver = 2; //true if auction is over.
   int64 Amount = 3; //highest bid thus far, or result of auction if over
+  int64 CurrentLeaderPort = 4; //The server will notify the client of whom the current leader is.
 }
 
 // Empty is used when no argument is provided
@@ -43,13 +46,14 @@ message AnswerMessage{
 }
 
 //
-message TimestampMessage{
+message ResultMessage{
   int64 Timestamp = 1;
+  int64 CallerId = 2;
 }
 
 service Node{
   rpc Bid(BidMessage) returns (Ack); //First "bid" registers the bidder. Must be higher than current highest bid.
-  rpc Result(TimestampMessage) returns (Outcome); //Highest bid thus far or result of auction if over.
+  rpc Result(ResultMessage) returns (Outcome); //Highest bid thus far or result of auction if over.
 
   rpc Election(ElectionMessage) returns (Empty);
   rpc Answer(AnswerMessage) returns (Empty);

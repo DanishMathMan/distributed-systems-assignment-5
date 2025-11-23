@@ -24,9 +24,10 @@ const (
 // BidMessage represents a bid request as made by a client, with its timestamp, id and the amount bid.
 type BidMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Timestamp     int64                  `protobuf:"varint,1,opt,name=Timestamp,proto3" json:"Timestamp,omitempty"` //lamport timestamp
-	BidderId      int64                  `protobuf:"varint,2,opt,name=BidderId,proto3" json:"BidderId,omitempty"`   //id of the bidder who made this bid
-	Amount        int64                  `protobuf:"varint,3,opt,name=Amount,proto3" json:"Amount,omitempty"`       //amount the bidder bids
+	Timestamp     int64                  `protobuf:"varint,1,opt,name=Timestamp,proto3" json:"Timestamp,omitempty"`       //lamport timestamp
+	BidderId      int64                  `protobuf:"varint,2,opt,name=BidderId,proto3" json:"BidderId,omitempty"`         //id of the bidder who made this bid
+	Amount        int64                  `protobuf:"varint,3,opt,name=Amount,proto3" json:"Amount,omitempty"`             //amount the bidder bids
+	WasForwarded  bool                   `protobuf:"varint,4,opt,name=WasForwarded,proto3" json:"WasForwarded,omitempty"` //only the primary server will set this field to true, all others set it to false
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -82,13 +83,21 @@ func (x *BidMessage) GetAmount() int64 {
 	return 0
 }
 
+func (x *BidMessage) GetWasForwarded() bool {
+	if x != nil {
+		return x.WasForwarded
+	}
+	return false
+}
+
 // Ack represents a response from a Node with a Timestamp of that Node as well as whether the operation succeeded failed or resulted in an exception
 type Ack struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Timestamp     int64                  `protobuf:"varint,1,opt,name=Timestamp,proto3" json:"Timestamp,omitempty"` //lamport timestamp
-	Response      int32                  `protobuf:"varint,2,opt,name=Response,proto3" json:"Response,omitempty"`   //one of three: fail, success, exception.
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Timestamp         int64                  `protobuf:"varint,1,opt,name=Timestamp,proto3" json:"Timestamp,omitempty"`                 //lamport timestamp
+	Response          int32                  `protobuf:"varint,2,opt,name=Response,proto3" json:"Response,omitempty"`                   //one of three: fail, success, exception.
+	CurrentLeaderPort int64                  `protobuf:"varint,3,opt,name=CurrentLeaderPort,proto3" json:"CurrentLeaderPort,omitempty"` //The server will notify the client of whom the current leader is.
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Ack) Reset() {
@@ -135,14 +144,22 @@ func (x *Ack) GetResponse() int32 {
 	return 0
 }
 
+func (x *Ack) GetCurrentLeaderPort() int64 {
+	if x != nil {
+		return x.CurrentLeaderPort
+	}
+	return 0
+}
+
 // Outcome gives the timestamp of the process which made the message, whether the auction is over and the highest (thus) far amount bid.
 type Outcome struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Timestamp     int64                  `protobuf:"varint,1,opt,name=Timestamp,proto3" json:"Timestamp,omitempty"` //lamport timestamp
-	IsOver        bool                   `protobuf:"varint,2,opt,name=IsOver,proto3" json:"IsOver,omitempty"`       //true if auction is over.
-	Amount        int64                  `protobuf:"varint,3,opt,name=Amount,proto3" json:"Amount,omitempty"`       //highest bid thus far, or result of auction if over
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	Timestamp         int64                  `protobuf:"varint,1,opt,name=Timestamp,proto3" json:"Timestamp,omitempty"`                 //lamport timestamp
+	IsOver            bool                   `protobuf:"varint,2,opt,name=IsOver,proto3" json:"IsOver,omitempty"`                       //true if auction is over.
+	Amount            int64                  `protobuf:"varint,3,opt,name=Amount,proto3" json:"Amount,omitempty"`                       //highest bid thus far, or result of auction if over
+	CurrentLeaderPort int64                  `protobuf:"varint,4,opt,name=CurrentLeaderPort,proto3" json:"CurrentLeaderPort,omitempty"` //The server will notify the client of whom the current leader is.
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *Outcome) Reset() {
@@ -192,6 +209,13 @@ func (x *Outcome) GetIsOver() bool {
 func (x *Outcome) GetAmount() int64 {
 	if x != nil {
 		return x.Amount
+	}
+	return 0
+}
+
+func (x *Outcome) GetCurrentLeaderPort() int64 {
+	if x != nil {
+		return x.CurrentLeaderPort
 	}
 	return 0
 }
@@ -390,27 +414,28 @@ func (x *AnswerMessage) GetNodeId() int64 {
 	return 0
 }
 
-type TimestampMessage struct {
+type ResultMessage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Timestamp     int64                  `protobuf:"varint,1,opt,name=Timestamp,proto3" json:"Timestamp,omitempty"`
+	CallerId      int64                  `protobuf:"varint,2,opt,name=CallerId,proto3" json:"CallerId,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *TimestampMessage) Reset() {
-	*x = TimestampMessage{}
+func (x *ResultMessage) Reset() {
+	*x = ResultMessage{}
 	mi := &file_proto_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *TimestampMessage) String() string {
+func (x *ResultMessage) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*TimestampMessage) ProtoMessage() {}
+func (*ResultMessage) ProtoMessage() {}
 
-func (x *TimestampMessage) ProtoReflect() protoreflect.Message {
+func (x *ResultMessage) ProtoReflect() protoreflect.Message {
 	mi := &file_proto_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -422,14 +447,21 @@ func (x *TimestampMessage) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use TimestampMessage.ProtoReflect.Descriptor instead.
-func (*TimestampMessage) Descriptor() ([]byte, []int) {
+// Deprecated: Use ResultMessage.ProtoReflect.Descriptor instead.
+func (*ResultMessage) Descriptor() ([]byte, []int) {
 	return file_proto_proto_rawDescGZIP(), []int{7}
 }
 
-func (x *TimestampMessage) GetTimestamp() int64 {
+func (x *ResultMessage) GetTimestamp() int64 {
 	if x != nil {
 		return x.Timestamp
+	}
+	return 0
+}
+
+func (x *ResultMessage) GetCallerId() int64 {
+	if x != nil {
+		return x.CallerId
 	}
 	return 0
 }
@@ -438,19 +470,22 @@ var File_proto_proto protoreflect.FileDescriptor
 
 const file_proto_proto_rawDesc = "" +
 	"\n" +
-	"\vproto.proto\"^\n" +
+	"\vproto.proto\"\x82\x01\n" +
 	"\n" +
 	"BidMessage\x12\x1c\n" +
 	"\tTimestamp\x18\x01 \x01(\x03R\tTimestamp\x12\x1a\n" +
 	"\bBidderId\x18\x02 \x01(\x03R\bBidderId\x12\x16\n" +
-	"\x06Amount\x18\x03 \x01(\x03R\x06Amount\"?\n" +
+	"\x06Amount\x18\x03 \x01(\x03R\x06Amount\x12\"\n" +
+	"\fWasForwarded\x18\x04 \x01(\bR\fWasForwarded\"m\n" +
 	"\x03Ack\x12\x1c\n" +
 	"\tTimestamp\x18\x01 \x01(\x03R\tTimestamp\x12\x1a\n" +
-	"\bResponse\x18\x02 \x01(\x05R\bResponse\"W\n" +
+	"\bResponse\x18\x02 \x01(\x05R\bResponse\x12,\n" +
+	"\x11CurrentLeaderPort\x18\x03 \x01(\x03R\x11CurrentLeaderPort\"\x85\x01\n" +
 	"\aOutcome\x12\x1c\n" +
 	"\tTimestamp\x18\x01 \x01(\x03R\tTimestamp\x12\x16\n" +
 	"\x06IsOver\x18\x02 \x01(\bR\x06IsOver\x12\x16\n" +
-	"\x06Amount\x18\x03 \x01(\x03R\x06Amount\"\a\n" +
+	"\x06Amount\x18\x03 \x01(\x03R\x06Amount\x12,\n" +
+	"\x11CurrentLeaderPort\x18\x04 \x01(\x03R\x11CurrentLeaderPort\"\a\n" +
 	"\x05Empty\"J\n" +
 	"\x12CoordinatorMessage\x12\x1c\n" +
 	"\tTimestamp\x18\x01 \x01(\x03R\tTimestamp\x12\x16\n" +
@@ -460,12 +495,13 @@ const file_proto_proto_rawDesc = "" +
 	"\x06NodeId\x18\x02 \x01(\x03R\x06NodeId\"E\n" +
 	"\rAnswerMessage\x12\x1c\n" +
 	"\tTimestamp\x18\x01 \x01(\x03R\tTimestamp\x12\x16\n" +
-	"\x06NodeId\x18\x02 \x01(\x03R\x06NodeId\"0\n" +
-	"\x10TimestampMessage\x12\x1c\n" +
-	"\tTimestamp\x18\x01 \x01(\x03R\tTimestamp2\xd3\x01\n" +
+	"\x06NodeId\x18\x02 \x01(\x03R\x06NodeId\"I\n" +
+	"\rResultMessage\x12\x1c\n" +
+	"\tTimestamp\x18\x01 \x01(\x03R\tTimestamp\x12\x1a\n" +
+	"\bCallerId\x18\x02 \x01(\x03R\bCallerId2\xd0\x01\n" +
 	"\x04Node\x12\x18\n" +
-	"\x03Bid\x12\v.BidMessage\x1a\x04.Ack\x12%\n" +
-	"\x06Result\x12\x11.TimestampMessage\x1a\b.Outcome\x12$\n" +
+	"\x03Bid\x12\v.BidMessage\x1a\x04.Ack\x12\"\n" +
+	"\x06Result\x12\x0e.ResultMessage\x1a\b.Outcome\x12$\n" +
 	"\bElection\x12\x10.ElectionMessage\x1a\x06.Empty\x12 \n" +
 	"\x06Answer\x12\x0e.AnswerMessage\x1a\x06.Empty\x12*\n" +
 	"\vCoordinator\x12\x13.CoordinatorMessage\x1a\x06.Empty\x12\x16\n" +
@@ -492,11 +528,11 @@ var file_proto_proto_goTypes = []any{
 	(*CoordinatorMessage)(nil), // 4: CoordinatorMessage
 	(*ElectionMessage)(nil),    // 5: ElectionMessage
 	(*AnswerMessage)(nil),      // 6: AnswerMessage
-	(*TimestampMessage)(nil),   // 7: TimestampMessage
+	(*ResultMessage)(nil),      // 7: ResultMessage
 }
 var file_proto_proto_depIdxs = []int32{
 	0, // 0: Node.Bid:input_type -> BidMessage
-	7, // 1: Node.Result:input_type -> TimestampMessage
+	7, // 1: Node.Result:input_type -> ResultMessage
 	5, // 2: Node.Election:input_type -> ElectionMessage
 	6, // 3: Node.Answer:input_type -> AnswerMessage
 	4, // 4: Node.Coordinator:input_type -> CoordinatorMessage

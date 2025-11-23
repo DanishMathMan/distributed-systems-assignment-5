@@ -9,6 +9,7 @@ import (
 	"distributed-systems-assignment-5/src/utility/lamportClock"
 	"errors"
 	"flag"
+	"log"
 	"net"
 	"os"
 	"regexp"
@@ -26,15 +27,17 @@ type AuctionNode struct {
 	NodeId       int64
 	LamportClock lamportClock.LamportClock
 	OutClients   map[int64]connections.ClientConnection //connections it has to backup servers
+	InClients    map[int64]chan interface{}             //connections from AuctionClients with channels of their messages to respond with
 	//Replies      map[int64]chan bool
 	AllFailed           chan bool
 	ReceivedAnswer      chan bool
 	NewLeader           chan bool
 	StartFlag           chan bool
 	Leader              int64
-	BidQueue            utility.BidQueue //queue of not-yet handled Bid rpc requests
+	RequestQueue        utility.RequestQueue //queue of not-yet handled Bid rpc requests
 	Bids                map[int64]*proto.BidMessage
-	BestBid             *proto.BidMessage
+	BestBid             *proto.BidMessage //todo consider mutex locking to avoid race condition
+	BidLock             *sync.Mutex
 	HasStartedAnElected bool
 	AuctionIsOver       bool
 }
@@ -45,8 +48,9 @@ func CreateAuctionNode(port int64, id int64) AuctionNode {
 	node.NodeId = id
 	node.LamportClock = lamportClock.CreateLamportClock()
 	node.OutClients = make(map[int64]connections.ClientConnection)
+	node.InClients = make(map[int64]chan interface{}, 1)
 	node.Leader = id
-	node.BidQueue = utility.BidQueue{}
+	node.RequestQueue = utility.RequestQueue{}
 	node.BestBid = &proto.BidMessage{Timestamp: 0, BidderId: -1, Amount: 0}
 	node.Bids = make(map[int64]*proto.BidMessage)
 	node.HasStartedAnElected = false
@@ -87,6 +91,7 @@ func main() {
 			time.Sleep(1 * time.Second)
 
 			//Ping the current leader
+			//even if the call times out and the leader is still alive (but slow), the election would just reelect the leader
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			_, err := server.OutClients[server.Leader].Client.Ping(ctx, nil)
@@ -98,24 +103,93 @@ func main() {
 
 	}()
 
-	//TODO Handle auction with normal operations
+	//continuously handle elements in queue TODO should it matter if it is a leader or not with respect to what it does?
+	go func() {
+		for {
+			//If no requests in queue, continue.
+			if server.RequestQueue.IsEmpty() {
+				continue
+			}
+			//Dequeue the request
+			request := server.RequestQueue.Dequeue()
 
-	//TODO after an X amount of time, the leader must indicate the auction has stopped,
-	//broadcast to all clients the highest bid
-}
+			//Check which type of request it is.
+			v, ok := request.(proto.BidMessage)
+			if ok == true {
+				//Was the bid message forwarded?
+				if v.GetWasForwarded() {
 
-// NormalOperation must be run when the primary node receives rpc calls from clients
-func (node *AuctionNode) NormalOperation() {
-	//TODO
-	//node.Request()
-	//node.Coordination()
-	//node.Execution()
-	//node.Agreement()
-	//node.Response()
-}
+					//Double check to ensure the amount from the leader is actual a new highest bid.
+					if server.BestBid.Amount > v.GetAmount() {
+						server.InClients[v.BidderId] <- proto.Ack{
+							Timestamp:         server.LamportClock.LocalEvent(),
+							Response:          int32(utility.EXCEPTION),
+							CurrentLeaderPort: server.Leader,
+						}
+					}
+					//Set the bid that arrived to be the best bid.
+					server.BestBid = &v
 
-func (node *AuctionNode) Request() {
+					//Create acknowledgement to leader that it has arrived.
+					server.InClients[v.BidderId] <- proto.Ack{
+						Timestamp:         server.LamportClock.LocalEvent(),
+						Response:          int32(utility.SUCCESS),
+						CurrentLeaderPort: server.Leader,
+					}
 
+				}
+
+				//if the node is not leader, send an exception alongside information regarding which port is the leader
+				if server.Leader != server.NodeId {
+					server.InClients[v.BidderId] <- proto.Ack{
+						Timestamp:         server.LamportClock.LocalEvent(),
+						Response:          int32(utility.EXCEPTION),
+						CurrentLeaderPort: server.Leader,
+					}
+					continue
+				} else {
+					//Node is the leader. Handle the bid.
+					var response int32
+					if v.Amount <= server.BestBid.Amount {
+						response = int32(utility.FAILURE)
+					} else {
+						response = int32(utility.SUCCESS)
+						server.BestBid = &v
+					}
+
+					server.InClients[v.BidderId] <- proto.Ack{
+						Timestamp:         server.LamportClock.LocalEvent(),
+						Response:          response,
+						CurrentLeaderPort: server.Leader,
+					}
+					continue
+				}
+			} else {
+				//If the request was an result message. (Can be handled by any node).
+				v2, ok2 := request.(proto.ResultMessage)
+				if ok2 == true {
+					server.InClients[v2.CallerId] <- proto.Outcome{
+						Timestamp:         server.LamportClock.LocalEvent(),
+						IsOver:            server.AuctionIsOver,
+						Amount:            server.BestBid.Amount,
+						CurrentLeaderPort: server.Leader,
+					}
+					continue
+				}
+			}
+			//if we got to here something went wrong with the type of message being received in the queue
+			log.Panic("invalid message type")
+		}
+	}()
+
+	//stop from prematurely exiting main
+	select {}
+
+	//todo ensure that the flag IsOver on an auction is activated!
+	//TODO after an X amount of time, the leader must indicate the auction has stopped, broadcast to all clients the highest bid
+	//time.Sleep(60 * time.Second)
+	//timestamp := server.LamportClock.GetCurrentTimestamp()
+	//server.Result(context.Background(), &timestamp)
 }
 
 func (node *AuctionNode) StartServer() {
@@ -186,17 +260,15 @@ func (node *AuctionNode) ConnectToNodeServer(port int64) error {
 	return nil
 }
 
-// TODO BULLY
-
 // CallElection uses the bully algorithm to determine a leader.
 // Based on the algorithm as described on https://en.wikipedia.org/wiki/Bully_algorithm last accessed 20/11/2025 TODO update date if necessary
 func (node *AuctionNode) CallElection() {
 	/*
-		    1. If P has the highest process ID, it sends a Victory message to all other processes and becomes the new Coordinator. Otherwise, P broadcasts an Election message to all other processes with higher process IDs than itself.
-			2. If P receives no Answer after sending an Election message, then it broadcasts a Victory message to all other processes and becomes the Coordinator.
-			3. If P receives an Answer from a process with a higher ID, it sends no further messages for this election and waits for a Victory message. (If there is no Victory message after a period of time, it restarts the process at the beginning.)
-			4. If P receives an Election message from another process with a lower ID it sends an Answer message back and if it has not already started an election, it starts the election process at the beginning, by sending an Election message to higher-numbered processes.
-			5. If P receives a Coordinator message, it treats the sender as the coordinator.
+		1. If P has the highest process ID, it sends a Victory message to all other processes and becomes the new Coordinator. Otherwise, P broadcasts an Election message to all other processes with higher process IDs than itself.
+		2. If P receives no Answer after sending an Election message, then it broadcasts a Victory message to all other processes and becomes the Coordinator.
+		3. If P receives an Answer from a process with a higher ID, it sends no further messages for this election and waits for a Victory message. (If there is no Victory message after a period of time, it restarts the process at the beginning.)
+		4. If P receives an Election message from another process with a lower ID it sends an Answer message back and if it has not already started an election, it starts the election process at the beginning, by sending an Election message to higher-numbered processes.
+		5. If P receives a Coordinator message, it treats the sender as the coordinator.
 	*/
 
 	node.HasStartedAnElected = true
@@ -271,6 +343,8 @@ func (node *AuctionNode) CallElection() {
 					//TODO HANDLE CORRECTLY
 				}
 			}
+			//Assign the node to know it became the leader
+			node.Leader = node.NodeId
 			break
 		}
 	}
@@ -324,12 +398,39 @@ func (node *AuctionNode) Ping(ctx context.Context, empty *proto.Empty) (*proto.E
 
 // Bid is the logic the server must run when it receives a Bid rpc call from a client or server in the case it is the leader server
 func (node *AuctionNode) Bid(ctx context.Context, bid *proto.BidMessage) (*proto.Ack, error) {
-	if node.Leader != node.NodeId {
-		//TODO THROW ERROR
+	node.LamportClock.RemoteEvent(bid.GetTimestamp())
+	err := node.RequestQueue.Enqueue(bid)
+	if err != nil {
+		return nil, err
 	}
+	response := <-node.InClients[bid.GetBidderId()]
+
+	//Forward the state to other backup nodes
+
+	//Send out state updates to all backup nodes if leader
+	if node.Leader != node.NodeId {
+		//Make the bid have the flag WasForwarded turned on for backup nodes to handle.
+		bid.WasForwarded = true
+		for k, v := range node.OutClients {
+			ack, err := v.Client.Bid(nil, bid)
+			if err != nil || ack.GetResponse() == int32(utility.EXCEPTION) || ack.GetResponse() == int32(utility.FAILURE) {
+				log.Panicf("The backup server with port: %d did not respond with a SUCCESS", k)
+			}
+		}
+	}
+
+	//Send response over to the client/leader
+	return response.(*proto.Ack), nil
 }
 
-func (node *AuctionNode) Result(ctx context.Context, msg *proto.TimestampMessage) (*proto.Outcome, error) {
-	timestamp := node.LamportClock.RemoteEvent(msg.GetTimestamp())
-	return &proto.Outcome{Timestamp: timestamp, IsOver: node.AuctionIsOver, Amount: node.BestBid.Amount}, nil
+func (node *AuctionNode) Result(ctx context.Context, msg *proto.ResultMessage) (*proto.Outcome, error) {
+	node.LamportClock.RemoteEvent(msg.Timestamp)
+	err := node.RequestQueue.Enqueue(msg)
+	if err != nil {
+		return nil, err
+	}
+	response := <-node.InClients[msg.CallerId]
+
+	//prepare for returning the response
+	return response.(*proto.Outcome), nil
 }
