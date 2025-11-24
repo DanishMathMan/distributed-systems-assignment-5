@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"bufio"
@@ -36,7 +36,7 @@ func CreateAuctionClient(id int64, primaryPort int64, backupPort int64) AuctionC
 	client.BackupPort = backupPort
 	client.LamportClock = lamportClock.CreateLamportClock()
 	client.ServerPool = make(map[int64]connections.ClientConnection)
-	client.CurrentLeader = client.ServerPool[client.PrimaryPort]
+	client.CurrentLeader = connections.ClientConnection{}
 	return *client
 }
 
@@ -85,8 +85,15 @@ func (client *AuctionClient) ConnectClientToNode(port int64) {
 		log.Fatal(err)
 	}
 	c := proto.NewNodeClient(connection)
-	client.CurrentLeader = client.ServerPool[client.PrimaryPort] // TODO need to correctly connect to leader node
+
+	//Add connection to map of nodes.
 	client.ServerPool[port] = connections.ClientConnection{Client: c}
+
+	//Update leader node if it's not been set.
+	if client.CurrentLeader != client.ServerPool[client.PrimaryPort] {
+		client.CurrentLeader = client.ServerPool[client.PrimaryPort]
+	}
+
 }
 
 func (client *AuctionClient) InputHandler() error {
@@ -120,26 +127,49 @@ func (client *AuctionClient) InputHandler() error {
 	}
 }
 
-//TODO (!==!) HANDLE LEADER UPDATE (!==!)
-
 func (client *AuctionClient) OnBidRequestResponse(BidMatch []string) error {
-	//do bidding
-	// todo bid must be higher than the current highest bid
 	timestamp := client.LamportClock.LocalEvent()
 	bidAmount, _ := strconv.ParseInt(BidMatch[1], 10, 64)
-	bid := &proto.BidMessage{Timestamp: timestamp, BidderId: client.ClientId, Amount: bidAmount}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	ack, err := client.CurrentLeader.Client.Bid(ctx, bid)
-	if err != nil {
+	bid := &proto.BidMessage{Timestamp: timestamp, BidderId: client.ClientId, Amount: bidAmount, WasForwarded: false}
 
+	leaderClient := client.ServerPool[client.PrimaryPort].Client
+	if leaderClient == nil {
+		fmt.Println("No leader client found")
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	ack, err := leaderClient.Bid(ctx, bid)
+	if err != nil {
 		//Assume its the timeout error we've gotten. Send up a request to the backup so we cna get an acknowledgement
-		defer cancel()
+		fmt.Println("Gave up on leader node. Trying backup!")
+
+		backupClient := client.ServerPool[client.BackupPort].Client
+		if backupClient == nil {
+			fmt.Println("No backup client found")
+		}
+
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel2()
 
 		//Reassign the acknowledgement to be from the backup to update our client to the new leader.
-		ack, err = client.ServerPool[client.BackupPort].Client.Bid(ctx, bid)
+		ack, err = client.ServerPool[client.BackupPort].Client.Bid(ctx2, bid)
+
+		if err != nil {
+			fmt.Println("Gave up on backup node. Ggs!")
+			fmt.Println("No extra clients to use. Goodbye")
+			os.Exit(1)
+		}
 
 	}
+
+	if ack == nil {
+		fmt.Println("Ack was nil!")
+		return nil
+	}
+
 	timestamp = client.LamportClock.RemoteEvent(ack.Timestamp)
 
 	//Check if our clients primary port (aka the leaders port) is different from the one from ack.
@@ -164,24 +194,49 @@ func (client *AuctionClient) OnBidRequestResponse(BidMatch []string) error {
 }
 
 func (client *AuctionClient) OnResultRequestResponse() error {
-	//do result getting
-	timestamp := proto.ResultMessage{Timestamp: client.LamportClock.LocalEvent()}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	timestamp := proto.ResultMessage{Timestamp: client.LamportClock.LocalEvent(), CallerId: client.ClientId}
+
+	leaderClient := client.ServerPool[client.PrimaryPort].Client
+	if leaderClient == nil {
+		fmt.Println("No leader client found")
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	result, err := client.CurrentLeader.Client.Result(ctx, &timestamp)
+
+	result, err := leaderClient.Result(ctx, &timestamp)
 	if err != nil {
-		//Assume its the timeout error we've gotten. Send up a request to the backup so we cna get an acknowledgement
+		//Create new timeout context to send up to backup
+
+		backupClient := client.ServerPool[client.BackupPort].Client
+		if backupClient == nil {
+			fmt.Println("No backup client found")
+		}
+
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel2()
 
 		//Reassign the acknowledgement to be from the backup to update our client to the new leader.
-		result, err = client.ServerPool[client.BackupPort].Client.Result(ctx, &timestamp)
+		result, err = backupClient.Result(ctx2, &timestamp)
+
+		if err != nil {
+			fmt.Println("No extra clients to use. Goodbye")
+			os.Exit(1)
+		}
 	}
+
+	if result == nil {
+		fmt.Println("Result was nil!")
+		return nil
+	}
+
 	//handle result
 	client.LamportClock.RemoteEvent(result.Timestamp)
 
 	//Check if our clients primary port (aka the leaders port) is different from the one from ack.
 	if result.GetCurrentLeaderPort() != client.PrimaryPort {
-
 		//Update the clients leader port
 		client.PrimaryPort = result.GetCurrentLeaderPort()
 		client.ConnectClientToNode(result.GetCurrentLeaderPort())

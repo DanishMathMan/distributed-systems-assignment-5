@@ -14,7 +14,7 @@ type RequestQueue struct {
 
 // Enqueue inserts an element into the queue
 func (queue *RequestQueue) Enqueue(in interface{}) error {
-	if reflect.TypeOf(in) != reflect.TypeOf(proto.BidMessage{}) || reflect.TypeOf(in) != reflect.TypeOf(proto.Ack{}) {
+	if reflect.TypeOf(in) != reflect.TypeOf(&proto.BidMessage{}) && reflect.TypeOf(in) != reflect.TypeOf(&proto.ResultMessage{}) {
 		return errors.New("the request must be of type *proto.BidMessage or *proto.Ack")
 	}
 	queue.data = append(queue.data, in)
