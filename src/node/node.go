@@ -112,16 +112,16 @@ func main() {
 			defer cancel()
 
 			//Ensure we have a client for the leader connection.
-			leaderCLient := server.OutClients[server.Leader].Client
+			leaderClient := server.OutClients[server.Leader].Client
 
 			//If our leader client is nil we are currently updating it.
-			if leaderCLient == nil {
+			if leaderClient == nil {
 				fmt.Println("Leader's client is now dead / closed.")
 				continue
 			}
 
 			//Ping the leaders client, if we dont get a response then
-			_, err := leaderCLient.Ping(ctx, nil)
+			_, err := leaderClient.Ping(ctx, nil)
 			fmt.Println("Pinging leader ", server.Leader)
 			if err != nil {
 
@@ -151,48 +151,10 @@ func main() {
 			//Dequeue the request
 			request := server.RequestQueue.Dequeue()
 
-			fmt.Println("Got request in queue: ", request)
-
 			switch msg := request.(type) {
 			case *proto.BidMessage:
 
 				fmt.Println("Recieved bid message: ", msg.BidderId)
-
-				//Was the bid message forwarded?
-				/*if msg.GetWasForwarded() {
-
-					fmt.Println("Received a replicate bid message")
-
-					//Double check to ensure the amount from the leader is actual a new highest bid.
-					if server.BestBid.Amount > msg.GetAmount() {
-						if server.InClients[msg.BidderId] == nil {
-							fmt.Println("Bidder ID was not found! (at line 162)")
-						}
-
-						server.InClients[msg.BidderId] <- &proto.Ack{
-							Timestamp:         server.LamportClock.LocalEvent(),
-							Response:          int32(utility.EXCEPTION),
-							CurrentLeaderPort: server.Leader,
-						}
-					}
-					//Set the bid that arrived to be the best bid.
-					server.BestBid = msg
-
-					//Create acknowledgement to leader that it has arrived.
-
-					if server.InClients[msg.BidderId] == nil {
-						fmt.Println("Bidder ID was not found! (at line 177)")
-					}
-
-					fmt.Println("Sending ack now to: ", msg.BidderId)
-
-					server.InClients[msg.BidderId] <- &proto.Ack{
-						Timestamp:         server.LamportClock.LocalEvent(),
-						Response:          int32(utility.SUCCESS),
-						CurrentLeaderPort: server.Leader,
-					}
-
-				}*/
 
 				//if the node is not leader, send an exception alongside information regarding which port is the leader
 				if server.Leader != server.NodeId {
@@ -552,6 +514,11 @@ func (node *AuctionNode) Bid(ctx context.Context, bid *proto.BidMessage) (*proto
 
 	if bid.GetWasForwarded() {
 		fmt.Println("A replicate bid message has been recieved on node: ", node.NodeId)
+
+		//Ensure the backup node also has the clients as channels!
+		if node.InClients[bid.BidderId] == nil {
+			node.InClients[bid.BidderId] = make(chan interface{}, 1)
+		}
 
 		//Double check to ensure the amount from the leader is actual a new highest bid.
 		if node.BestBid.Amount > bid.GetAmount() {
