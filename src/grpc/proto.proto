@@ -59,4 +59,5 @@ service Node{
   rpc Answer(AnswerMessage) returns (Empty);
   rpc Coordinator(CoordinatorMessage) returns (Empty);
   rpc Ping(Empty) returns (Empty);
+  rpc Sync(BidMessage) returns (BidMessage);
 }

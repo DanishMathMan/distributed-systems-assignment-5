@@ -25,6 +25,7 @@ const (
 	Node_Answer_FullMethodName      = "/Node/Answer"
 	Node_Coordinator_FullMethodName = "/Node/Coordinator"
 	Node_Ping_FullMethodName        = "/Node/Ping"
+	Node_Sync_FullMethodName        = "/Node/Sync"
 )
 
 // NodeClient is the client API for Node service.
@@ -37,6 +38,7 @@ type NodeClient interface {
 	Answer(ctx context.Context, in *AnswerMessage, opts ...grpc.CallOption) (*Empty, error)
 	Coordinator(ctx context.Context, in *CoordinatorMessage, opts ...grpc.CallOption) (*Empty, error)
 	Ping(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Empty, error)
+	Sync(ctx context.Context, in *BidMessage, opts ...grpc.CallOption) (*BidMessage, error)
 }
 
 type nodeClient struct {
@@ -107,6 +109,16 @@ func (c *nodeClient) Ping(ctx context.Context, in *Empty, opts ...grpc.CallOptio
 	return out, nil
 }
 
+func (c *nodeClient) Sync(ctx context.Context, in *BidMessage, opts ...grpc.CallOption) (*BidMessage, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BidMessage)
+	err := c.cc.Invoke(ctx, Node_Sync_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodeServer is the server API for Node service.
 // All implementations must embed UnimplementedNodeServer
 // for forward compatibility.
@@ -117,6 +129,7 @@ type NodeServer interface {
 	Answer(context.Context, *AnswerMessage) (*Empty, error)
 	Coordinator(context.Context, *CoordinatorMessage) (*Empty, error)
 	Ping(context.Context, *Empty) (*Empty, error)
+	Sync(context.Context, *BidMessage) (*BidMessage, error)
 	mustEmbedUnimplementedNodeServer()
 }
 
@@ -144,6 +157,9 @@ func (UnimplementedNodeServer) Coordinator(context.Context, *CoordinatorMessage)
 }
 func (UnimplementedNodeServer) Ping(context.Context, *Empty) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Ping not implemented")
+}
+func (UnimplementedNodeServer) Sync(context.Context, *BidMessage) (*BidMessage, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Sync not implemented")
 }
 func (UnimplementedNodeServer) mustEmbedUnimplementedNodeServer() {}
 func (UnimplementedNodeServer) testEmbeddedByValue()              {}
@@ -274,6 +290,24 @@ func _Node_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Node_Sync_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BidMessage)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServer).Sync(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Node_Sync_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServer).Sync(ctx, req.(*BidMessage))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Node_ServiceDesc is the grpc.ServiceDesc for Node service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -304,6 +338,10 @@ var Node_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Ping",
 			Handler:    _Node_Ping_Handler,
+		},
+		{
+			MethodName: "Sync",
+			Handler:    _Node_Sync_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

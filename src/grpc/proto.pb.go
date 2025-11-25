@@ -498,14 +498,15 @@ const file_proto_proto_rawDesc = "" +
 	"\x06NodeId\x18\x02 \x01(\x03R\x06NodeId\"I\n" +
 	"\rResultMessage\x12\x1c\n" +
 	"\tTimestamp\x18\x01 \x01(\x03R\tTimestamp\x12\x1a\n" +
-	"\bCallerId\x18\x02 \x01(\x03R\bCallerId2\xd0\x01\n" +
+	"\bCallerId\x18\x02 \x01(\x03R\bCallerId2\xf2\x01\n" +
 	"\x04Node\x12\x18\n" +
 	"\x03Bid\x12\v.BidMessage\x1a\x04.Ack\x12\"\n" +
 	"\x06Result\x12\x0e.ResultMessage\x1a\b.Outcome\x12$\n" +
 	"\bElection\x12\x10.ElectionMessage\x1a\x06.Empty\x12 \n" +
 	"\x06Answer\x12\x0e.AnswerMessage\x1a\x06.Empty\x12*\n" +
 	"\vCoordinator\x12\x13.CoordinatorMessage\x1a\x06.Empty\x12\x16\n" +
-	"\x04Ping\x12\x06.Empty\x1a\x06.EmptyB\x1aZ\x18Assignment-05/grpc/protob\x06proto3"
+	"\x04Ping\x12\x06.Empty\x1a\x06.Empty\x12 \n" +
+	"\x04Sync\x12\v.BidMessage\x1a\v.BidMessageB\x1aZ\x18Assignment-05/grpc/protob\x06proto3"
 
 var (
 	file_proto_proto_rawDescOnce sync.Once
@@ -537,14 +538,16 @@ var file_proto_proto_depIdxs = []int32{
 	6, // 3: Node.Answer:input_type -> AnswerMessage
 	4, // 4: Node.Coordinator:input_type -> CoordinatorMessage
 	3, // 5: Node.Ping:input_type -> Empty
-	1, // 6: Node.Bid:output_type -> Ack
-	2, // 7: Node.Result:output_type -> Outcome
-	3, // 8: Node.Election:output_type -> Empty
-	3, // 9: Node.Answer:output_type -> Empty
-	3, // 10: Node.Coordinator:output_type -> Empty
-	3, // 11: Node.Ping:output_type -> Empty
-	6, // [6:12] is the sub-list for method output_type
-	0, // [0:6] is the sub-list for method input_type
+	0, // 6: Node.Sync:input_type -> BidMessage
+	1, // 7: Node.Bid:output_type -> Ack
+	2, // 8: Node.Result:output_type -> Outcome
+	3, // 9: Node.Election:output_type -> Empty
+	3, // 10: Node.Answer:output_type -> Empty
+	3, // 11: Node.Coordinator:output_type -> Empty
+	3, // 12: Node.Ping:output_type -> Empty
+	0, // 13: Node.Sync:output_type -> BidMessage
+	7, // [7:14] is the sub-list for method output_type
+	0, // [0:7] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name

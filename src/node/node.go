@@ -28,23 +28,21 @@ import (
 
 type AuctionNode struct {
 	proto.UnimplementedNodeServer
-	Port         int64
-	NodeId       int64
-	LamportClock lamportClock.LamportClock
-	OutClients   map[int64]connections.ClientConnection //connections it has to backup servers
-	InClients    map[int64]chan interface{}             //connections from AuctionClients with channels of their messages to respond with
-	//Replies      map[int64]chan bool
+	Port                int64
+	NodeId              int64
+	LamportClock        lamportClock.LamportClock
+	OutClients          map[int64]connections.ClientConnection //connections it has to back up servers
+	InClients           map[int64]chan interface{}             //connections from AuctionClients with channels of their messages to respond with
 	AllFailed           chan bool
 	ReceivedAnswer      chan bool
 	NewLeader           chan bool
 	StartFlag           chan bool
 	Leader              int64
 	RequestQueue        utility.RequestQueue //queue of not-yet handled Bid rpc requests
-	Bids                map[int64]*proto.BidMessage
-	BestBid             *proto.BidMessage //todo consider mutex locking to avoid race condition
-	BidLock             *sync.Mutex
+	BestBid             *proto.BidMessage
 	HasStartedAnElected bool
 	AuctionIsOver       bool
+	IsSyncing           chan bool
 }
 
 func CreateAuctionNode(id int64, port int64, leaderId int64) AuctionNode {
@@ -57,13 +55,13 @@ func CreateAuctionNode(id int64, port int64, leaderId int64) AuctionNode {
 	node.Leader = leaderId
 	node.RequestQueue = utility.RequestQueue{}
 	node.BestBid = &proto.BidMessage{Timestamp: 0, BidderId: -1, Amount: 0}
-	node.Bids = make(map[int64]*proto.BidMessage)
 	node.HasStartedAnElected = false
 	node.AllFailed = make(chan bool, 1)
 	node.ReceivedAnswer = make(chan bool, 1)
 	node.NewLeader = make(chan bool, 1)
 	node.StartFlag = make(chan bool)
 	node.AuctionIsOver = false
+	node.IsSyncing = make(chan bool)
 	return *node
 }
 
@@ -143,7 +141,7 @@ func main() {
 	//continuously handle elements in queue TODO should it matter if it is a leader or not with respect to what it does?
 	go func() {
 		for {
-
+			//todo stop if an election is in process and / or syncing
 			//If no requests in queue, continue.
 			if server.RequestQueue.IsEmpty() {
 				continue
@@ -408,7 +406,8 @@ func (node *AuctionNode) CallElection() {
 		case <-node.ReceivedAnswer:
 			select {
 			case <-node.NewLeader:
-				//A leader has been determined and therefore we can return
+				//A leader has been determined and therefore we must sync the current best bid, to be the best among all replicas
+				fmt.Println("Node with id: ", node.NodeId, " recieved new leader")
 				break
 			case <-time.After(5 * time.Second):
 				//timeout reached, create new election
@@ -417,6 +416,42 @@ func (node *AuctionNode) CallElection() {
 			}
 			break
 		case <-node.AllFailed:
+			for {
+				var leaderUpdated = false
+				for connId, conn := range node.OutClients {
+					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+					defer cancel()
+
+					client := conn.Client
+					if client == nil {
+						fmt.Println("Client not existing! (line 448)")
+						continue
+					}
+
+					bidReturned, err := client.Sync(ctx, node.BestBid)
+					if err != nil {
+						if status.Code(err) == codes.Unavailable || strings.Contains(err.Error(), "EOF") {
+							//Node is dead
+							fmt.Println("The client doesn't exist!")
+							delete(node.OutClients, connId)
+							fmt.Println("Deleted connection ", connId)
+						}
+					}
+
+					//if returned amount is larger than our current best bid amount then we need to update our bid.
+					if bidReturned.GetAmount() > node.BestBid.GetAmount() {
+						node.BestBid = bidReturned
+						leaderUpdated = true
+					}
+				}
+				//if the leader was updated, then one of the replicas has a better best bid, and we must resync
+				if leaderUpdated {
+					continue
+				} else {
+					break
+				}
+			}
+
 			for connId, conn := range node.OutClients {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				defer cancel()
@@ -428,6 +463,7 @@ func (node *AuctionNode) CallElection() {
 				}
 
 				_, err := client.Coordinator(ctx, &proto.CoordinatorMessage{NodeId: node.NodeId})
+				//todo sync
 				if err != nil {
 					if status.Code(err) == codes.Unavailable || strings.Contains(err.Error(), "EOF") {
 						//Node is dead
@@ -608,8 +644,30 @@ func (node *AuctionNode) ReplicateBid(ctx context.Context, bid *proto.BidMessage
 		if err != nil || ack.GetResponse() == int32(utility.EXCEPTION) || ack.GetResponse() == int32(utility.FAILURE) {
 			log.Panicf("The backup server with port: %d did not respond with a SUCCESS", connId)
 		}
+		fmt.Println("did my first replicate bid. Now waiting 10 seconds.")
+		time.Sleep(10 * time.Second)
 	}
 	return nil
+}
+
+// Sync is the logic that runs in a node when it receives a sync call from the current leader. To be called once a new leader has been found
+// Sync returns the best bid it has.
+func (node *AuctionNode) Sync(ctx context.Context, leaderBestBid *proto.BidMessage) (*proto.BidMessage, error) {
+	//if the RequestQueue is not empty it must empty is first, because the actual best bid might be among them, which is not known in the wider system,
+	//but has been returned as a success to the client and was registered in the previous leader
+	for {
+		if !node.RequestQueue.IsEmpty() {
+			continue
+		} else {
+			break
+		}
+	}
+	//we must check if this node's best bid is better than the leaders
+	if node.BestBid.GetAmount() < leaderBestBid.GetAmount() {
+		fmt.Println("Bid was higher than mine, updating")
+		node.BestBid = leaderBestBid
+	}
+	return node.BestBid, nil
 }
 
 func (node *AuctionNode) Result(ctx context.Context, msg *proto.ResultMessage) (*proto.Outcome, error) {
