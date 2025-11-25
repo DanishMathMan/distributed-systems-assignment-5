@@ -42,10 +42,11 @@ type AuctionNode struct {
 	BestBid             *proto.BidMessage
 	HasStartedAnElected bool
 	AuctionIsOver       bool
-	IsSyncing           chan bool
+	IsSyncing           bool
+	TimeToStop          time.Time
 }
 
-func CreateAuctionNode(id int64, port int64, leaderId int64) AuctionNode {
+func CreateAuctionNode(id int64, port int64, leaderId int64, timeToStop time.Time) AuctionNode {
 	node := new(AuctionNode)
 	node.Port = port
 	node.NodeId = id
@@ -61,17 +62,24 @@ func CreateAuctionNode(id int64, port int64, leaderId int64) AuctionNode {
 	node.NewLeader = make(chan bool, 1)
 	node.StartFlag = make(chan bool)
 	node.AuctionIsOver = false
-	node.IsSyncing = make(chan bool)
+	node.IsSyncing = false
+	node.TimeToStop = timeToStop
 	return *node
 }
 
 func main() {
 	port := flag.Int64("port", 8080, "Input port for the server to start on. Note, port is also its id")
 	leaderId := flag.Int64("leader", 0, "Start leader for the server")
+	timeToStopString := flag.String("end", "", "Time to stop the server")
 	id := port
 	flag.Parse()
+	timeToStop, err := time.Parse("15:04:05", *timeToStopString)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("Time to stop the server is invalid: %v", err))
+		os.Exit(1)
+	}
 	//Create server with id, port, leader's id (which is the port of the leader server).
-	server := CreateAuctionNode(*id, *port, *leaderId)
+	server := CreateAuctionNode(*id, *port, *leaderId, timeToStop)
 	fmt.Println("Started server on port ", *port, " with ID: ", *id)
 	go server.StartServer()
 
@@ -218,15 +226,19 @@ func main() {
 		}
 	}()
 
+	//continuously check if the auction is over
+	go func() {
+		for {
+			if time.Now().After(server.TimeToStop) {
+				fmt.Println("The auction is over")
+				server.AuctionIsOver = true
+				return
+			}
+		}
+	}()
+
 	//stop from prematurely exiting main
 	select {}
-
-	//todo ensure to remove clients from the InClients map (all of them!)
-	//todo ensure that the flag IsOver on an auction is activated!
-	//TODO after an X amount of time, the leader must indicate the auction has stopped, broadcast to all clients the highest bid
-	//time.Sleep(60 * time.Second)
-	//timestamp := server.LamportClock.GetCurrentTimestamp()
-	//server.Result(context.Background(), &timestamp)
 }
 
 func (node *AuctionNode) StartServer() {
@@ -311,7 +323,7 @@ func (node *AuctionNode) ConnectToNodeServer(port int64) error {
 }
 
 // CallElection uses the bully algorithm to determine a leader.
-// Based on the algorithm as described on https://en.wikipedia.org/wiki/Bully_algorithm last accessed 20/11/2025 TODO update date if necessary
+// Based on the algorithm as described on https://en.wikipedia.org/wiki/Bully_algorithm last accessed 20/11/2025
 func (node *AuctionNode) CallElection() {
 	/*
 		1. If P has the highest process ID, it sends a Victory message to all other processes and becomes the new Coordinator. Otherwise, P broadcasts an Election message to all other processes with higher process IDs than itself.
@@ -416,6 +428,7 @@ func (node *AuctionNode) CallElection() {
 			}
 			break
 		case <-node.AllFailed:
+			node.IsSyncing = true
 			for {
 				var leaderUpdated = false
 				for connId, conn := range node.OutClients {
@@ -451,6 +464,7 @@ func (node *AuctionNode) CallElection() {
 					break
 				}
 			}
+			node.IsSyncing = false
 
 			for connId, conn := range node.OutClients {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -547,7 +561,6 @@ func (node *AuctionNode) Ping(ctx context.Context, empty *proto.Empty) (*proto.E
 
 // Bid is the logic the server must run when it receives a Bid rpc call from a client or server in the case it is the leader server
 func (node *AuctionNode) Bid(ctx context.Context, bid *proto.BidMessage) (*proto.Ack, error) {
-
 	if bid.GetWasForwarded() {
 		fmt.Println("A replicate bid message has been recieved on node: ", node.NodeId)
 
@@ -578,7 +591,23 @@ func (node *AuctionNode) Bid(ctx context.Context, bid *proto.BidMessage) (*proto
 		}, nil
 	}
 
+	//if the node is syncing then it shouldn't accept new bids from clients
+	if node.IsSyncing {
+		return &proto.Ack{
+			Timestamp:         node.LamportClock.LocalEvent(),
+			Response:          int32(utility.EXCEPTION),
+			CurrentLeaderPort: node.Leader,
+		}, nil
+	}
+
 	fmt.Println("A bid has been received on node: ", node.NodeId)
+	if node.AuctionIsOver {
+		return &proto.Ack{
+			Timestamp:         0,
+			Response:          int32(utility.ISOVER),
+			CurrentLeaderPort: 0,
+		}, nil
+	}
 
 	if node.InClients[bid.BidderId] == nil {
 		//Create the channel for the new client
@@ -644,8 +673,6 @@ func (node *AuctionNode) ReplicateBid(ctx context.Context, bid *proto.BidMessage
 		if err != nil || ack.GetResponse() == int32(utility.EXCEPTION) || ack.GetResponse() == int32(utility.FAILURE) {
 			log.Panicf("The backup server with port: %d did not respond with a SUCCESS", connId)
 		}
-		fmt.Println("did my first replicate bid. Now waiting 10 seconds.")
-		time.Sleep(10 * time.Second)
 	}
 	return nil
 }
@@ -655,6 +682,8 @@ func (node *AuctionNode) ReplicateBid(ctx context.Context, bid *proto.BidMessage
 func (node *AuctionNode) Sync(ctx context.Context, leaderBestBid *proto.BidMessage) (*proto.BidMessage, error) {
 	//if the RequestQueue is not empty it must empty is first, because the actual best bid might be among them, which is not known in the wider system,
 	//but has been returned as a success to the client and was registered in the previous leader
+	node.IsSyncing = true
+	defer func() { node.IsSyncing = false }()
 	for {
 		if !node.RequestQueue.IsEmpty() {
 			continue
@@ -662,6 +691,8 @@ func (node *AuctionNode) Sync(ctx context.Context, leaderBestBid *proto.BidMessa
 			break
 		}
 	}
+
+	//stop all incoming queue calls / await them.
 	//we must check if this node's best bid is better than the leaders
 	if node.BestBid.GetAmount() < leaderBestBid.GetAmount() {
 		fmt.Println("Bid was higher than mine, updating")

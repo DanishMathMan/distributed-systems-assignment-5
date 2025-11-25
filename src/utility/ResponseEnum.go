@@ -6,4 +6,5 @@ const (
 	EXCEPTION ResponseEnum = iota
 	SUCCESS
 	FAILURE
+	ISOVER
 )

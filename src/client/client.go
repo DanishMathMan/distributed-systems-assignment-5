@@ -99,7 +99,11 @@ func (client *AuctionClient) ConnectClientToNode(port int64) {
 func (client *AuctionClient) InputHandler() error {
 
 	BidRegex := regexp.MustCompile("--bid *(?P<bid>\\d{0,7})")
-	ResultRegex := regexp.MustCompile("--request")
+	ResultRegex := regexp.MustCompile("--result")
+
+	fmt.Println("-- Welcome to our auction --")
+	fmt.Println("To bid please type: --bid (amount)")
+	fmt.Println("To see the current result of auction type: --result")
 
 	for {
 		reader := bufio.NewReader(os.Stdin)
@@ -181,7 +185,7 @@ func (client *AuctionClient) OnBidRequestResponse(BidMatch []string) error {
 
 	switch ack.Response {
 	case int32(utility.EXCEPTION):
-		fmt.Println(fmt.Sprintf("You are without leader! SHAME!"))
+		fmt.Println(fmt.Sprintf("Something went wrong. Please bid again."))
 		break
 	case int32(utility.SUCCESS):
 		fmt.Println(fmt.Sprintf("You've succesfully bidded %d", bid.Amount))
@@ -189,6 +193,8 @@ func (client *AuctionClient) OnBidRequestResponse(BidMatch []string) error {
 	case int32(utility.FAILURE):
 		fmt.Println(fmt.Sprintf("Your bid was lower than the current highest bid"))
 		break
+	case int32(utility.ISOVER):
+		fmt.Println(fmt.Sprintf("The auction is over. To see who won type the command: '--result'"))
 	}
 	return nil
 }
