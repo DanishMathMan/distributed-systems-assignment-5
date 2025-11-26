@@ -356,7 +356,7 @@ func (node *AuctionNode) CallElection() {
 			//todo should we remove the client / connection here?
 			client := conn.Client
 			if client == nil {
-				fmt.Println("Client not existing! (line 370)")
+				log.Println("Client not existing! (line 370)")
 				continue
 			}
 
