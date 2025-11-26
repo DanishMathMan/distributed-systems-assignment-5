@@ -89,7 +89,7 @@ func main() {
 	go func() {
 		err := server.InputHandler()
 		if err != nil {
-			//TODO HANDLE
+			log.Println("Something went wrong.")
 		}
 	}()
 
@@ -154,10 +154,9 @@ func main() {
 
 	}()
 
-	//continuously handle elements in queue TODO should it matter if it is a leader or not with respect to what it does?
+	//continuously handle elements in queue
 	go func() {
 		for {
-			//todo stop if an election is in process and / or syncing
 			//If no requests in queue, continue.
 			if server.RequestQueue.IsEmpty() {
 				continue
@@ -374,10 +373,9 @@ func (node *AuctionNode) CallElection() {
 			defer cancel()
 
 			//Ensure there exists a client for the connection
-			//todo should we remove the client / connection here?
 			client := conn.Client
 			if client == nil {
-				log.Println("Client not existing! (line 370)")
+				log.Println("Client doesn't exist!")
 				continue
 			}
 
@@ -503,7 +501,6 @@ func (node *AuctionNode) CallElection() {
 				}
 
 				_, err := client.Coordinator(ctx, &proto.CoordinatorMessage{NodeId: node.NodeId})
-				//todo sync
 				if err != nil {
 					if status.Code(err) == codes.Unavailable || strings.Contains(err.Error(), "EOF") {
 						//Node is dead

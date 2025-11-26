@@ -41,7 +41,6 @@ func CreateAuctionClient(id int64, primaryPort int64, backupPort int64) AuctionC
 }
 
 func main() {
-	//TODO Consider using proper GUID / UUID instead of user input?
 	id := flag.Int64("id", -1, "ID of Client. MUST BE UNIQUE (!)")
 	primaryPort := flag.Int64("primary-port", -1, "Input port for the client to associate with the primary server. Note, port is also its id")
 	backupPort := flag.Int64("backup-port", -1, "Input port for the client to associate with a backup server. Note, port is also its id")
