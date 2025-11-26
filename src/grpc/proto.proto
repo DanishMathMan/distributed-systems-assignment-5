@@ -54,6 +54,7 @@ message ResultMessage{
 service Node{
   rpc Bid(BidMessage) returns (Ack); //First "bid" registers the bidder. Must be higher than current highest bid.
   rpc Result(ResultMessage) returns (Outcome); //Highest bid thus far or result of auction if over.
+  rpc AuctionEnd(Empty) returns (Outcome); //Blocks until the auction is over and then returns the outcome.
   
   rpc Election(ElectionMessage) returns (Empty);
   rpc Answer(AnswerMessage) returns (Empty);

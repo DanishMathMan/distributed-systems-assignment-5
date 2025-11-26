@@ -68,6 +68,10 @@ func main() {
 	client := CreateAuctionClient(*id, *primaryPort, *backupPort)
 	client.ConnectClientToNode(*primaryPort)
 	client.ConnectClientToNode(*backupPort)
+
+	//goroutine to always wait for the auction to end and report the result
+	go client.AuctionEnd()
+
 	go func() {
 		err := client.InputHandler()
 		if err != nil {
@@ -199,6 +203,64 @@ func (client *AuctionClient) OnBidRequestResponse(BidMatch []string) error {
 	return nil
 }
 
+// waits for RPC AuctionEnd() from the server
+func (client *AuctionClient) AuctionEnd() {
+	for {
+		// needs to find who leader is such that we can call the method on leader node
+		leaderClient := client.ServerPool[client.PrimaryPort].Client
+		if leaderClient == nil {
+			fmt.Println("No leader client found")
+			continue
+		}
+
+		// 30 seconds determines how long the client will wait for the WaitForAuctionEnd response from the leader node
+		// Note: if you change auctionTimeout then you have to change this value accordingly, maybe use a config file for the auctionTimeout value so both can share?
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		outcome, err := leaderClient.AuctionEnd(ctx, &proto.Empty{})
+		cancel() // cancel stops context timer
+
+		// If leader is unresponsive, like it died then dont panic, just wait a bit and try a backup instead
+		if err != nil {
+			fmt.Println("Waiting for auction end failed on leader, trying backup:", err)
+
+			backupClient := client.ServerPool[client.BackupPort].Client
+			if backupClient == nil {
+				fmt.Println("No backup client found")
+				continue
+			}
+
+			// 30 seconds determines how long the client will wait for the AuctionEnd response from the backup node
+			ctx2, cancel2 := context.WithTimeout(context.Background(), 30*time.Second)
+			outcome, err = backupClient.AuctionEnd(ctx2, &proto.Empty{})
+			cancel2()
+
+			if err != nil {
+				fmt.Println("Waiting for auction end, failed on backup node", err)
+				continue
+			}
+		}
+
+		if outcome == nil {
+			fmt.Println("Outcome was nil!")
+			continue
+		}
+
+		client.handleOutcome(outcome)
+		return
+	}
+}
+
+// moved some print code from OnResultRequestResponse() into a helper method to make it reusable
+func (client *AuctionClient) handleOutcome(result *proto.Outcome) {
+	if result.IsOver {
+		fmt.Println("[AUCTION] IS OVER!")
+		fmt.Println(fmt.Sprintf("Winning Highest Bid: %d", result.Amount))
+	} else {
+		fmt.Println("[AUCTION] IS STILL GOING!")
+		fmt.Println(fmt.Sprintf("Current Highest Bid: %d", result.Amount))
+	}
+}
+
 func (client *AuctionClient) OnResultRequestResponse() error {
 
 	timestamp := proto.ResultMessage{Timestamp: client.LamportClock.LocalEvent(), CallerId: client.ClientId}
@@ -237,23 +299,12 @@ func (client *AuctionClient) OnResultRequestResponse() error {
 		fmt.Println("Result was nil!")
 		return nil
 	}
-
-	//handle result
 	client.LamportClock.RemoteEvent(result.Timestamp)
 
-	//Check if our clients primary port (aka the leaders port) is different from the one from ack.
 	if result.GetCurrentLeaderPort() != client.PrimaryPort {
-		//Update the clients leader port
 		client.PrimaryPort = result.GetCurrentLeaderPort()
 		client.ConnectClientToNode(result.GetCurrentLeaderPort())
 	}
-
-	if result.IsOver {
-		fmt.Println("[AUCTION] IS OVER!")
-		fmt.Println(fmt.Sprintf("Winning Highest Bid: %d", result.Amount))
-	} else {
-		fmt.Println("[AUCTION] IS STILL GOING!")
-		fmt.Println(fmt.Sprintf("Current Highest Bid: %d", result.Amount))
-	}
+	client.handleOutcome(result)
 	return nil
 }

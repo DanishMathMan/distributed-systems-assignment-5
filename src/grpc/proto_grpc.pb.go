@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v6.32.1
-// source: proto.proto
+// source: grpc/proto.proto
 
 package proto
 
@@ -21,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	Node_Bid_FullMethodName         = "/Node/Bid"
 	Node_Result_FullMethodName      = "/Node/Result"
+	Node_AuctionEnd_FullMethodName  = "/Node/AuctionEnd"
 	Node_Election_FullMethodName    = "/Node/Election"
 	Node_Answer_FullMethodName      = "/Node/Answer"
 	Node_Coordinator_FullMethodName = "/Node/Coordinator"
@@ -34,6 +35,7 @@ const (
 type NodeClient interface {
 	Bid(ctx context.Context, in *BidMessage, opts ...grpc.CallOption) (*Ack, error)
 	Result(ctx context.Context, in *ResultMessage, opts ...grpc.CallOption) (*Outcome, error)
+	AuctionEnd(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Outcome, error)
 	Election(ctx context.Context, in *ElectionMessage, opts ...grpc.CallOption) (*Empty, error)
 	Answer(ctx context.Context, in *AnswerMessage, opts ...grpc.CallOption) (*Empty, error)
 	Coordinator(ctx context.Context, in *CoordinatorMessage, opts ...grpc.CallOption) (*Empty, error)
@@ -63,6 +65,16 @@ func (c *nodeClient) Result(ctx context.Context, in *ResultMessage, opts ...grpc
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Outcome)
 	err := c.cc.Invoke(ctx, Node_Result_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeClient) AuctionEnd(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Outcome, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Outcome)
+	err := c.cc.Invoke(ctx, Node_AuctionEnd_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +137,7 @@ func (c *nodeClient) Sync(ctx context.Context, in *BidMessage, opts ...grpc.Call
 type NodeServer interface {
 	Bid(context.Context, *BidMessage) (*Ack, error)
 	Result(context.Context, *ResultMessage) (*Outcome, error)
+	AuctionEnd(context.Context, *Empty) (*Outcome, error)
 	Election(context.Context, *ElectionMessage) (*Empty, error)
 	Answer(context.Context, *AnswerMessage) (*Empty, error)
 	Coordinator(context.Context, *CoordinatorMessage) (*Empty, error)
@@ -145,6 +158,9 @@ func (UnimplementedNodeServer) Bid(context.Context, *BidMessage) (*Ack, error) {
 }
 func (UnimplementedNodeServer) Result(context.Context, *ResultMessage) (*Outcome, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Result not implemented")
+}
+func (UnimplementedNodeServer) AuctionEnd(context.Context, *Empty) (*Outcome, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AuctionEnd not implemented")
 }
 func (UnimplementedNodeServer) Election(context.Context, *ElectionMessage) (*Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Election not implemented")
@@ -214,6 +230,24 @@ func _Node_Result_Handler(srv interface{}, ctx context.Context, dec func(interfa
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeServer).Result(ctx, req.(*ResultMessage))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Node_AuctionEnd_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeServer).AuctionEnd(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Node_AuctionEnd_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeServer).AuctionEnd(ctx, req.(*Empty))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -324,6 +358,10 @@ var Node_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _Node_Result_Handler,
 		},
 		{
+			MethodName: "AuctionEnd",
+			Handler:    _Node_AuctionEnd_Handler,
+		},
+		{
 			MethodName: "Election",
 			Handler:    _Node_Election_Handler,
 		},
@@ -345,5 +383,5 @@ var Node_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "proto.proto",
+	Metadata: "grpc/proto.proto",
 }
