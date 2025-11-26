@@ -46,7 +46,7 @@ type AuctionNode struct {
 	TimeToStop          time.Time
 }
 
-func CreateAuctionNode(id int64, port int64, leaderId int64, timeToStop time.Time) AuctionNode {
+func CreateAuctionNode(id int64, port int64, leaderId int64) AuctionNode {
 	node := new(AuctionNode)
 	node.Port = port
 	node.NodeId = id
@@ -63,23 +63,28 @@ func CreateAuctionNode(id int64, port int64, leaderId int64, timeToStop time.Tim
 	node.StartFlag = make(chan bool)
 	node.AuctionIsOver = false
 	node.IsSyncing = false
-	node.TimeToStop = timeToStop
+	//node.TimeToStop = timeToStop
 	return *node
 }
+
+var auctionTimeOut = 20 * time.Second
+var wasFirstBid = true
+var auctionEndTime time.Time
 
 func main() {
 	port := flag.Int64("port", 8080, "Input port for the server to start on. Note, port is also its id")
 	leaderId := flag.Int64("leader", 0, "Start leader for the server")
-	timeToStopString := flag.String("end", "", "Time to stop the server")
+	//timeToStopString := flag.String("end", "", "Time to stop the server")
 	id := port
 	flag.Parse()
-	timeToStop, err := time.Parse("15:04:05", *timeToStopString)
-	if err != nil {
-		fmt.Println(fmt.Sprintf("Time to stop the server is invalid: %v", err))
-		os.Exit(1)
-	}
+	//timeToStop, err := time.Parse("15:04:05", *timeToStopString)
+	//if err != nil {
+	//	fmt.Println(fmt.Sprintf("Time to stop the server is invalid: %v", err))
+	//	os.Exit(1)
+	//}
+
 	//Create server with id, port, leader's id (which is the port of the leader server).
-	server := CreateAuctionNode(*id, *port, *leaderId, timeToStop)
+	server := CreateAuctionNode(*id, *port, *leaderId)
 	fmt.Println("Started server on port ", *port, " with ID: ", *id)
 	go server.StartServer()
 
@@ -101,6 +106,30 @@ func main() {
 	//continuously make sure the node has a connection to the leader
 	go func() {
 		for {
+			if !auctionEndTime.IsZero() && time.Now().After(auctionEndTime) {
+				fmt.Println("Auction has ended")
+				server.AuctionIsOver = true
+
+				for _, conn := range server.OutClients {
+					//Ensure there exists a client for the connection
+					//todo should we remove the client / connection here?
+					client := conn.Client
+					if client == nil {
+						fmt.Println("Client not existing! (line 370)")
+						continue
+					}
+
+					for _, client := range server.InClients {
+						client <- &proto.Outcome{
+							Timestamp:         server.LamportClock.LocalEvent(),
+							IsOver:            server.AuctionIsOver,
+							Amount:            server.BestBid.Amount,
+							CurrentLeaderPort: server.Leader,
+						}
+					}
+				}
+				os.Exit(1)
+			}
 			//We are already leader, no need to ping
 			if server.Leader == server.NodeId {
 				fmt.Println("Leader ID: ", server.Leader, " Server ID: ", server.NodeId)
@@ -223,17 +252,6 @@ func main() {
 				log.Panic("invalid message type")
 			}
 
-		}
-	}()
-
-	//continuously check if the auction is over
-	go func() {
-		for {
-			if time.Now().After(server.TimeToStop) {
-				fmt.Println("The auction is over")
-				server.AuctionIsOver = true
-				return
-			}
 		}
 	}()
 
@@ -561,6 +579,12 @@ func (node *AuctionNode) Ping(ctx context.Context, empty *proto.Empty) (*proto.E
 
 // Bid is the logic the server must run when it receives a Bid rpc call from a client or server in the case it is the leader server
 func (node *AuctionNode) Bid(ctx context.Context, bid *proto.BidMessage) (*proto.Ack, error) {
+	if wasFirstBid {
+		wasFirstBid = false
+		auctionEndTime = time.Now().Add(auctionTimeOut)
+		fmt.Println("Auction ends at: ", auctionEndTime)
+	}
+
 	if bid.GetWasForwarded() {
 		fmt.Println("A replicate bid message has been recieved on node: ", node.NodeId)
 
