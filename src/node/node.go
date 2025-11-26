@@ -94,23 +94,23 @@ func main() {
 	}()
 
 	//wait for starter flag to have been called
-	fmt.Println("Waiting for start flag ", *port)
+	log.Println("Waiting for start flag ", *port)
 	<-server.StartFlag
-	fmt.Println("Got the start flag, starting on: ", *port)
+	log.Println("Got the start flag, starting on: ", *port)
 
 	//continuously make sure the node has a connection to the leader
 	go func() {
 		for {
 			//We are already leader, no need to ping
 			if server.Leader == server.NodeId {
-				fmt.Println("Leader ID: ", server.Leader, " Server ID: ", server.NodeId)
-				fmt.Println("Sleeping as leader")
+				log.Println("Leader ID: ", server.Leader, " Server ID: ", server.NodeId)
+				log.Println("Sleeping as leader")
 				time.Sleep(1 * time.Second)
 				continue
 			}
 
 			time.Sleep(1 * time.Second)
-			fmt.Println("Sleeping as normal node")
+			log.Println("Sleeping as normal node")
 
 			//Ping the current leader
 			//even if the call times out and the leader is still alive (but slow), the election would just reelect the leader
@@ -122,24 +122,24 @@ func main() {
 
 			//If our leader client is nil we are currently updating it.
 			if leaderClient == nil {
-				fmt.Println("Leader's client is now dead / closed.")
+				log.Println("Leader's client is now dead / closed.")
 				continue
 			}
 
 			//Ping the leaders client, if we dont get a response then
 			_, err := leaderClient.Ping(ctx, nil)
-			fmt.Println("Pinging leader ", server.Leader)
+			log.Println("Pinging leader ", server.Leader)
 			if err != nil {
 
 				if status.Code(err) == codes.Unavailable || strings.Contains(err.Error(), "EOF") {
 					//Node is dead
-					fmt.Println("The leader is dead!")
+					log.Println("The leader is dead!")
 					delete(server.OutClients, server.Leader)
-					fmt.Println("Deleted leader ", server.Leader)
+					log.Println("Deleted leader ", server.Leader)
 				}
 
 				//The leader crashed, call an election
-				fmt.Println("Called an election!")
+				log.Println("Called an election!")
 				server.CallElection()
 			}
 		}
@@ -165,13 +165,13 @@ func main() {
 				//if the node is not leader, send an exception alongside information regarding which port is the leader
 				if server.Leader != server.NodeId {
 
-					fmt.Println("Received a message as an backup node")
+					log.Println("Received a message as an backup node")
 
 					if server.InClients[msg.BidderId] == nil {
-						fmt.Println("Bidder ID was not found! (at line 192)")
+						log.Println("Bidder ID was not found! (at line 192)")
 					}
 
-					fmt.Println("Sending ack now to check for leader matchup: ", msg.BidderId)
+					log.Println("Sending ack now to check for leader matchup: ", msg.BidderId)
 
 					server.InClients[msg.BidderId] <- &proto.Ack{
 						Timestamp:         server.LamportClock.LocalEvent(),
@@ -190,10 +190,10 @@ func main() {
 					}
 
 					if server.InClients[msg.BidderId] == nil {
-						fmt.Println("Bidder ID was not found! (at line 212)")
+						log.Println("Bidder ID was not found! (at line 212)")
 					}
 
-					fmt.Println("Sending ack to channel now for bidder: ", msg.BidderId)
+					log.Println("Sending ack to channel now for bidder: ", msg.BidderId)
 
 					server.InClients[msg.BidderId] <- &proto.Ack{
 						Timestamp:         server.LamportClock.LocalEvent(),
@@ -205,7 +205,7 @@ func main() {
 			case *proto.ResultMessage:
 
 				if server.InClients[msg.CallerId] == nil {
-					fmt.Println("Caller ID was not found! (at line 228)")
+					log.Println("Caller ID was not found! (at line 228)")
 				}
 
 				server.InClients[msg.CallerId] <- &proto.Outcome{
@@ -218,8 +218,8 @@ func main() {
 
 			default:
 				//if we got to here something went wrong with the type of message being received in the queue
-				fmt.Println("We got the wrong type of message!")
-				fmt.Println("The request is of type: ", reflect.TypeOf(request))
+				log.Println("We got the wrong type of message!")
+				log.Println("The request is of type: ", reflect.TypeOf(request))
 				log.Panic("invalid message type")
 			}
 
@@ -314,7 +314,7 @@ func (node *AuctionNode) ConnectToNodeServer(port int64) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("Made connection to server: ", port)
+	log.Println("Made connection to server: ", port)
 	connection := connections.ClientConnection{Client: client, IsDown: false}
 	node.OutClients[port] = connection
 	//node.Replies[port] = make(chan bool, 1)
@@ -333,7 +333,7 @@ func (node *AuctionNode) CallElection() {
 		5. If P receives a Coordinator message, it treats the sender as the coordinator.
 	*/
 
-	fmt.Println("Election has started for ", node.NodeId)
+	log.Println("Election has started for ", node.NodeId)
 
 	node.HasStartedAnElected = true
 	IsHighest := true
@@ -348,7 +348,7 @@ func (node *AuctionNode) CallElection() {
 
 	//if we are the highest ID then we need to broadcast out to everyone else that we are the leader.
 	if IsHighest {
-		for _, conn := range node.OutClients {
+		for connId, conn := range node.OutClients {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 
@@ -363,14 +363,19 @@ func (node *AuctionNode) CallElection() {
 			_, err := client.Coordinator(ctx, &proto.CoordinatorMessage{NodeId: node.NodeId})
 
 			if err != nil {
-				//TODO HANDLE CORRECTLY
+				if status.Code(err) == codes.Unavailable || strings.Contains(err.Error(), "EOF") {
+					//Node is dead
+					log.Println("The node is no longer available!")
+					delete(node.OutClients, connId)
+					log.Println("Deleted connection ", connId)
+				}
 				conn.IsDown = true
 			}
 		}
 		node.Leader = node.NodeId
 	} else {
 
-		fmt.Println("I was not the highest!... I am now doing work.")
+		log.Println("I was not the highest!... I am now doing work.")
 		higherNodesCount := 0 //count the number of nodes that are higher than it which it knows about
 		failedNodesCount := 0 //count the number of those nodes that fail to respond
 		wg := sync.WaitGroup{}
@@ -387,11 +392,11 @@ func (node *AuctionNode) CallElection() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 				defer cancel()
 
-				fmt.Println("Calling election with ", electionMsg.NodeId, " for node ", connId)
+				log.Println("Calling election with ", electionMsg.NodeId, " for node ", connId)
 
 				client := conn.Client
 				if client == nil {
-					fmt.Println("Client not existing! (line 406)")
+					log.Println("Client not existing! (line 406)")
 					return
 				}
 
@@ -400,12 +405,12 @@ func (node *AuctionNode) CallElection() {
 
 					if status.Code(err) == codes.Unavailable || strings.Contains(err.Error(), "EOF") {
 						//Node is dead
-						fmt.Println("The client doesn't exist!")
+						log.Println("The client doesn't exist!")
 						delete(node.OutClients, connId)
-						fmt.Println("Deleted connection ", connId)
+						log.Println("Deleted connection ", connId)
 					}
 
-					fmt.Println("Got error (at line 420): ", err.Error())
+					log.Println("Got error (at line 420): ", err.Error())
 					failedNodesCount++
 				}
 			})
@@ -472,7 +477,7 @@ func (node *AuctionNode) CallElection() {
 
 				client := conn.Client
 				if client == nil {
-					fmt.Println("Client not existing! (line 448)")
+					log.Println("Client not existing! (line 448)")
 					continue
 				}
 
@@ -481,9 +486,9 @@ func (node *AuctionNode) CallElection() {
 				if err != nil {
 					if status.Code(err) == codes.Unavailable || strings.Contains(err.Error(), "EOF") {
 						//Node is dead
-						fmt.Println("The client doesn't exist!")
+						log.Println("The client doesn't exist!")
 						delete(node.OutClients, connId)
-						fmt.Println("Deleted connection ", connId)
+						log.Println("Deleted connection ", connId)
 					}
 				}
 			}
@@ -503,7 +508,7 @@ func (node *AuctionNode) Election(ctx context.Context, electionMsg *proto.Electi
 
 	timestamp := node.LamportClock.RemoteEvent(electionMsg.Timestamp)
 	if node.NodeId <= electionMsg.NodeId {
-		fmt.Println("The ID of received election is lower...")
+		log.Println("The ID of received election is lower...")
 		return nil, errors.New("the ID of received election cannot be lower that clients id")
 	}
 
@@ -519,13 +524,13 @@ func (node *AuctionNode) Election(ctx context.Context, electionMsg *proto.Electi
 	if err != nil {
 		if status.Code(err) == codes.Unavailable || strings.Contains(err.Error(), "EOF") {
 			//Node is dead
-			fmt.Println("The node is dead!")
+			log.Println("The node is dead!")
 			delete(node.OutClients, clientId)
-			fmt.Println("Deleted client ", clientId)
+			log.Println("Deleted client ", clientId)
 		}
 	}
 	if node.HasStartedAnElected == false {
-		fmt.Println("The id has not started an election... Starting it now")
+		log.Println("The id has not started an election... Starting it now")
 		node.CallElection()
 	}
 
@@ -543,14 +548,14 @@ func (node *AuctionNode) Coordinator(ctx context.Context, msg *proto.Coordinator
 // Answer is the logic the server must run when it receives an Answer rpc call from another server.
 func (node *AuctionNode) Answer(ctx context.Context, answer *proto.AnswerMessage) (*proto.Empty, error) {
 	if answer.NodeId <= node.NodeId {
-		fmt.Println("The ID of received answer is lower...")
+		log.Println("The ID of received answer is lower...")
 		return nil, errors.New("the ID of received answer cannot be lower that clients id")
 	}
 
 	//populate channel indicating an answer for use in the CallElection method
-	fmt.Println("Got the answer! Sending it into channel now")
+	log.Println("Got the answer! Sending it into channel now")
 	node.ReceivedAnswer <- true
-	fmt.Println("Returning empty proto now!")
+	log.Println("Returning empty proto now!")
 	return &proto.Empty{}, nil
 }
 
@@ -562,7 +567,7 @@ func (node *AuctionNode) Ping(ctx context.Context, empty *proto.Empty) (*proto.E
 // Bid is the logic the server must run when it receives a Bid rpc call from a client or server in the case it is the leader server
 func (node *AuctionNode) Bid(ctx context.Context, bid *proto.BidMessage) (*proto.Ack, error) {
 	if bid.GetWasForwarded() {
-		fmt.Println("A replicate bid message has been recieved on node: ", node.NodeId)
+		log.Println("A replicate bid message has been received on node: ", node.NodeId)
 
 		//Ensure the backup node also has the clients as channels!
 		if node.InClients[bid.BidderId] == nil {
@@ -582,7 +587,7 @@ func (node *AuctionNode) Bid(ctx context.Context, bid *proto.BidMessage) (*proto
 
 		//Create acknowledgement to leader that it has arrived.
 
-		fmt.Println("Sending ack now to leader: ", bid.BidderId)
+		log.Println("Sending ack now to leader: ", bid.BidderId)
 
 		return &proto.Ack{
 			Timestamp:         node.LamportClock.LocalEvent(),
@@ -611,40 +616,40 @@ func (node *AuctionNode) Bid(ctx context.Context, bid *proto.BidMessage) (*proto
 
 	if node.InClients[bid.BidderId] == nil {
 		//Create the channel for the new client
-		fmt.Println("Made new client for bidder: ", bid.BidderId)
+		log.Println("Made new client for bidder: ", bid.BidderId)
 		node.InClients[bid.BidderId] = make(chan interface{}, 1)
 	}
 
 	node.LamportClock.RemoteEvent(bid.GetTimestamp())
 	err := node.RequestQueue.Enqueue(bid)
-	fmt.Println("The bid has been enqueued!")
+	log.Println("The bid has been enqueued!")
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println("Awaiting response")
+	log.Println("Awaiting response")
 	response := <-node.InClients[bid.BidderId]
-	fmt.Println("Made it past the response")
+	log.Println("Made it past the response")
 
 	//Forward the state to other backup nodes
 	ack, ok := response.(*proto.Ack)
 	if !ok {
-		fmt.Println("Internal server error")
+		log.Println("Internal server error")
 		return nil, errors.New(fmt.Sprint("Internal Server Error"))
 	}
 	//Send out state updates to all backup nodes if leader
 	if node.Leader == node.NodeId && ack.Response == int32(utility.SUCCESS) {
-		fmt.Println("Starting replicate bid go routine")
+		log.Println("Starting replicate bid go routine")
 		go func() {
 			err2 := node.ReplicateBid(context.Background(), bid)
 			if err2 != nil {
-				fmt.Println("Replicate bid failed!")
+				log.Println("Replicate bid failed!")
 			}
 		}()
 	}
 
 	//Send response over to the client/leader
-	fmt.Println("Returning ack now from bid!")
+	log.Println("Returning ack now from bid!")
 	return ack, nil
 }
 
@@ -663,16 +668,28 @@ func (node *AuctionNode) ReplicateBid(ctx context.Context, bid *proto.BidMessage
 
 		client := conn.Client
 		if client == nil {
-			fmt.Println("Client not existing!")
+			log.Println("Client not existing!")
 			delete(node.OutClients, connId)
-			fmt.Println("Deleted client ", connId)
+			log.Println("Deleted client ", connId)
 			continue
 		}
 
 		ack, err := client.Bid(ctx, bid)
-		if err != nil || ack.GetResponse() == int32(utility.EXCEPTION) || ack.GetResponse() == int32(utility.FAILURE) {
+		if err != nil {
+			if status.Code(err) == codes.Unavailable || strings.Contains(err.Error(), "EOF") {
+				//Node is dead
+				log.Println("The backup node is dead!")
+				delete(node.OutClients, bid.GetBidderId())
+				log.Println("Deleted backup node ", bid.BidderId)
+				continue
+			}
+
+		}
+
+		if ack.GetResponse() == int32(utility.EXCEPTION) || ack.GetResponse() == int32(utility.FAILURE) {
 			log.Panicf("The backup server with port: %d did not respond with a SUCCESS", connId)
 		}
+
 	}
 	return nil
 }
